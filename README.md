@@ -1,7 +1,7 @@
 # z/OS Assistant for Copilot
 
-[![Version](https://img.shields.io/visual-studio-marketplace/v/zarafa-dev.io.zos-copilot-assistant)](https://marketplace.visualstudio.com/items?itemName=zarafa-dev.io.zos-copilot-assistant)
-[![Installs](https://img.shields.io/visual-studio-marketplace/i/zarafa-dev.io.zos-copilot-assistant)](https://marketplace.visualstudio.com/items?itemName=zarafa-dev.io.zos-copilot-assistant)
+[![Version](https://img.shields.io/visual-studio-marketplace/v/zarafa-dev-io.zos-copilot-assistant)](https://marketplace.visualstudio.com/items?itemName=zarafa-dev-io.zos-copilot-assistant)
+[![Installs](https://img.shields.io/visual-studio-marketplace/i/zarafa-dev-io.zos-copilot-assistant)](https://marketplace.visualstudio.com/items?itemName=zarafa-dev-io.zos-copilot-assistant)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 > Talk to your mainframe in natural language — directly from GitHub Copilot Chat.
