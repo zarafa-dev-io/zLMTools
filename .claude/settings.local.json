@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pnpm vsix:pre)",
+      "Bash(pnpm install)",
+      "Bash(CI=true pnpm install)"
+    ]
+  }
+}

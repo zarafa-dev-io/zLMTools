@@ -1,8 +1,12 @@
 # Changelog
 
-All notable changes to **z/OS Assistant for Copilot** will be documented in this file.
+All notable changes to **z/OS Assistant for Copilot** are documented here.
 
-## [0.1.0] — 2026-02-20
+The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+---
+
+## [0.1.0] - 2026-03-04
 
 ### Added
 
@@ -23,7 +27,7 @@ All notable changes to **z/OS Assistant for Copilot** will be documented in this
 - `DATASET_INFO` — Display detailed dataset characteristics
 
 #### `/jobs` — z/OS Jobs
-- `LIST_JOBS` — List jobs by owner, prefix, and status with RC indicators
+- `LIST_JOBS` — List jobs by owner, prefix, and status with RC indicators (✅ 🟡 🔴)
 - `GET_JOB_STATUS` — Detailed job status with spool file listing
 - `GET_JOB_OUTPUT` — Intelligent spool display (auto-show JES messages, truncate long output)
 - `GET_SPOOL_FILE` — Read specific DD by name and step
@@ -32,19 +36,30 @@ All notable changes to **z/OS Assistant for Copilot** will be documented in this
 - `MONITOR_JOB` — Poll job status until completion with auto-diagnostic on error
 
 #### `/run` — JCL Submission
-- `SUBMIT_DATASET` — Submit JCL from a dataset/member
+- `SUBMIT_DATASET` — Submit JCL from a dataset or PDS member
 - `SUBMIT_INLINE` — Submit JCL provided directly in chat
 - `SUBMIT_AND_MONITOR` — Submit + automatic monitoring + spool display on completion
 - `RESUBMIT` — Re-submit JCL from a previous job (retrieved from JESJCL spool)
 
+#### Language Model Tools
+- `#zos_listDatasets` — List datasets matching a pattern
+- `#zos_listMembers` — List PDS members
+- `#zos_readMember` — Read a PDS member's content
+- `#zos_datasetInfo` — Get dataset attributes (DSORG, RECFM, LRECL, BLKSIZE…)
+- `#zos_searchContent` — Search text across a PDS
+- `#zos_listJobs` — List jobs by owner, prefix, or status
+- `#zos_getJobStatus` — Get detailed job status and return code
+- `#zos_getJobOutput` — Retrieve spool output (SYSPRINT, JESMSGLG…)
+- `#zos_submitJcl` — Submit JCL from a dataset member
+
 #### Safety & Security
 - Three-tier safety levels: safe / moderate / dangerous
-- Automatic production zone detection (PROD, PRD, SYS* patterns)
-- Modal confirmation for dangerous operations
-- Configurable protected dataset patterns
+- Automatic production zone detection (`*.PROD.*`, `*.PRD.*`, `SYS*.**` patterns)
+- Modal confirmation dialogs for dangerous operations
+- Configurable protected dataset patterns via settings
 
 #### Infrastructure
-- Zowe session management via Zowe Explorer API or Team Config
-- esbuild bundling for optimized VSIX
-- Local telemetry for usage reporting
-- Configurable settings (timeout, poll interval, spool truncation)
+- Zowe session management via Zowe Explorer API or Team Config (`zowe.config.json`)
+- esbuild bundling for optimized VSIX packaging
+- Local telemetry stored in VS Code `globalState` (no external data transmission)
+- Configurable settings: timeout, poll interval, spool truncation, protected patterns

@@ -19,3 +19,16 @@ node_modules/**
 
 # Docs (keep README and CHANGELOG for marketplace)
 docs/**
+
+# pnpm
+pnpm-lock.yaml
+pnpm-workspace.yaml
+
+# Source maps
+**/*.map
+
+# Claude settings
+.claude/
+
+# Makefile
+Makefile
