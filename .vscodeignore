@@ -1,0 +1,21 @@
+# Sources — esbuild bundles everything into dist/
+src/**
+out/**
+
+# Dev tooling
+.vscode/**
+.github/**
+.eslintrc*
+jest.config.js
+tsconfig.json
+**/*.test.ts
+**/*.test.js
+**/*.spec.ts
+
+# Build artifacts
+node_modules/**
+*.vsix
+.gitignore
+
+# Docs (keep README and CHANGELOG for marketplace)
+docs/**

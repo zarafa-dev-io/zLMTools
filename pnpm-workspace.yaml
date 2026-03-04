@@ -1,0 +1,7 @@
+onlyBuiltDependencies:
+  - '@vscode/vsce-sign'
+  - '@zowe/secrets-for-zowe-sdk'
+  - cpu-features
+  - esbuild
+  - keytar
+  - ssh2

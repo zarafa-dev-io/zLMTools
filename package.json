@@ -1,0 +1,378 @@
+{
+    "name": "zos-copilot-assistant",
+    "displayName": "z/OS Assistant for Copilot",
+    "description": "Interact with z/OS mainframes directly from GitHub Copilot Chat — manage datasets, jobs, JCL submission via Zowe SDK.",
+    "version": "0.1.0",
+    "publisher": "zarafa-dev.io",
+    "license": "MIT",
+    "icon": "assets/icon.png",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/zarafa-dev-io/zLMTools"
+    },
+    "bugs": {
+        "url": "https://github.com/zarafa-dev-io/zLMTools/issues"
+    },
+    "engines": {
+        "vscode": "^1.105.0"
+    },
+    "categories": [
+        "Chat",
+        "Programming Languages",
+        "Other"
+    ],
+    "keywords": [
+        "mainframe",
+        "z/OS",
+        "zowe",
+        "cobol",
+        "copilot",
+        "jcl",
+        "datasets",
+        "jobs"
+    ],
+    "activationEvents": [],
+    "main": "./dist/participant.js",
+    "extensionDependencies": [
+        "github.copilot-chat"
+    ],
+    "contributes": {
+        "chatParticipants": [
+            {
+                "id": "zdevops.zos",
+                "fullName": "z/OS Assistant",
+                "name": "zos",
+                "description": "Interact with z/OS via Zowe: datasets, jobs, JCL submission, TSO, USS",
+                "isSticky": true,
+                "commands": [
+                    {
+                        "name": "ds",
+                        "description": "Datasets & PDS members: list, read, write, search, delete"
+                    },
+                    {
+                        "name": "jobs",
+                        "description": "z/OS Jobs: status, spool output, history, cancel, purge"
+                    },
+                    {
+                        "name": "run",
+                        "description": "Submit JCL from a dataset, inline, or resubmit a previous job"
+                    },
+                    {
+                        "name": "tso",
+                        "description": "Execute TSO or z/OS console commands"
+                    },
+                    {
+                        "name": "uss",
+                        "description": "Browse and manipulate the USS filesystem"
+                    },
+                    {
+                        "name": "lpar",
+                        "description": "List, switch and manage z/OS partitions (LPAR profiles)"
+                    }
+                ]
+            }
+        ],
+        "commands": [
+            {
+                "command": "zos.openMember",
+                "title": "z/OS: Open member in editor"
+            },
+            {
+                "command": "zos.telemetryReport",
+                "title": "z/OS: Usage report (last 30 days)"
+            },
+            {
+                "command": "zos.clearSessionCache",
+                "title": "z/OS: Clear Zowe session cache"
+            },
+            {
+                "command": "zos.selectLpar",
+                "title": "z/OS: Select LPAR / partition"
+            }
+        ],
+        "languageModelTools": [
+            {
+                "name": "zos_listDatasets",
+                "toolReferenceName": "zos_listDatasets",
+                "displayName": "z/OS: List Datasets",
+                "modelDescription": "List z/OS datasets matching a pattern. Returns dataset names with attributes (DSORG, RECFM, LRECL, volume).",
+                "canBeReferencedInPrompt": true,
+                "icon": "$(server)",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "pattern": {
+                            "type": "string",
+                            "description": "Dataset name pattern (e.g. HLQ.COBOL.** or HLQ.*.SRC)"
+                        }
+                    },
+                    "required": ["pattern"]
+                }
+            },
+            {
+                "name": "zos_listMembers",
+                "toolReferenceName": "zos_listMembers",
+                "displayName": "z/OS: List PDS Members",
+                "modelDescription": "List all members in a z/OS PDS dataset with modification dates and user IDs.",
+                "canBeReferencedInPrompt": true,
+                "icon": "$(file-code)",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "dataset": {
+                            "type": "string",
+                            "description": "Fully qualified PDS dataset name (e.g. HLQ.COBOL.SRC)"
+                        },
+                        "pattern": {
+                            "type": "string",
+                            "description": "Optional member name filter pattern"
+                        }
+                    },
+                    "required": ["dataset"]
+                }
+            },
+            {
+                "name": "zos_readMember",
+                "toolReferenceName": "zos_readMember",
+                "displayName": "z/OS: Read Member",
+                "modelDescription": "Read the content of a PDS member. Use this to examine COBOL source code, JCL, copybooks, or any z/OS dataset member.",
+                "canBeReferencedInPrompt": true,
+                "icon": "$(file-code)",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "dataset": {
+                            "type": "string",
+                            "description": "PDS dataset name (e.g. HLQ.COBOL.SRC)"
+                        },
+                        "member": {
+                            "type": "string",
+                            "description": "Member name (e.g. PGMA)"
+                        }
+                    },
+                    "required": ["dataset", "member"]
+                }
+            },
+            {
+                "name": "zos_datasetInfo",
+                "toolReferenceName": "zos_datasetInfo",
+                "displayName": "z/OS: Dataset Info",
+                "modelDescription": "Get detailed attributes of a z/OS dataset: DSORG, RECFM, LRECL, BLKSIZE, volume, SMS classes, creation and reference dates.",
+                "canBeReferencedInPrompt": true,
+                "icon": "$(info)",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "dataset": {
+                            "type": "string",
+                            "description": "Fully qualified dataset name"
+                        }
+                    },
+                    "required": ["dataset"]
+                }
+            },
+            {
+                "name": "zos_searchContent",
+                "toolReferenceName": "zos_searchContent",
+                "displayName": "z/OS: Search in PDS",
+                "modelDescription": "Search for text across all members of a PDS dataset. Returns matching lines with member names and line numbers. Useful for finding COBOL paragraphs, copybook usage, or specific code patterns.",
+                "canBeReferencedInPrompt": true,
+                "icon": "$(search)",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "dataset": {
+                            "type": "string",
+                            "description": "PDS dataset to search in"
+                        },
+                        "searchTerm": {
+                            "type": "string",
+                            "description": "Text to search for (case-insensitive)"
+                        },
+                        "memberPattern": {
+                            "type": "string",
+                            "description": "Optional member name pattern to restrict search scope"
+                        }
+                    },
+                    "required": ["dataset", "searchTerm"]
+                }
+            },
+            {
+                "name": "zos_listJobs",
+                "toolReferenceName": "zos_listJobs",
+                "displayName": "z/OS: List Jobs",
+                "modelDescription": "List z/OS jobs filtered by owner, name prefix, or status (ACTIVE, OUTPUT, INPUT). Returns job name, ID, owner, status, and return code.",
+                "canBeReferencedInPrompt": true,
+                "icon": "$(pulse)",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "owner": {
+                            "type": "string",
+                            "description": "Job owner user ID"
+                        },
+                        "prefix": {
+                            "type": "string",
+                            "description": "Job name prefix with optional wildcard (e.g. PAYROLL*)"
+                        },
+                        "status": {
+                            "type": "string",
+                            "enum": ["ACTIVE", "OUTPUT", "INPUT"],
+                            "description": "Filter by job status"
+                        }
+                    }
+                }
+            },
+            {
+                "name": "zos_getJobStatus",
+                "toolReferenceName": "zos_getJobStatus",
+                "displayName": "z/OS: Job Status",
+                "modelDescription": "Get detailed status of a z/OS job including return code, class, subsystem, and list of spool files with sizes.",
+                "canBeReferencedInPrompt": true,
+                "icon": "$(info)",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "jobId": {
+                            "type": "string",
+                            "description": "Job ID (e.g. JOB12345)"
+                        },
+                        "jobName": {
+                            "type": "string",
+                            "description": "Job name — uses most recent match if multiple exist"
+                        }
+                    }
+                }
+            },
+            {
+                "name": "zos_getJobOutput",
+                "toolReferenceName": "zos_getJobOutput",
+                "displayName": "z/OS: Job Output",
+                "modelDescription": "Retrieve spool output from a z/OS job. Can filter by DD name (JESMSGLG, JESJCL, SYSPRINT, SYSOUT). Without a filter, returns the most important spool files automatically.",
+                "canBeReferencedInPrompt": true,
+                "icon": "$(output)",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "jobId": {
+                            "type": "string",
+                            "description": "Job ID"
+                        },
+                        "jobName": {
+                            "type": "string",
+                            "description": "Job name"
+                        },
+                        "ddName": {
+                            "type": "string",
+                            "description": "Specific DD name to retrieve (e.g. SYSPRINT, JESMSGLG, SYSOUT)"
+                        }
+                    }
+                }
+            },
+            {
+                "name": "zos_submitJcl",
+                "toolReferenceName": "zos_submitJcl",
+                "displayName": "z/OS: Submit JCL",
+                "modelDescription": "Submit JCL from a dataset member for execution on z/OS. Returns the assigned job ID for tracking. Requires user confirmation before execution.",
+                "canBeReferencedInPrompt": true,
+                "icon": "$(run)",
+                "tags": ["confirmation"],
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "dataset": {
+                            "type": "string",
+                            "description": "Dataset containing the JCL (e.g. HLQ.JCL.CNTL)"
+                        },
+                        "member": {
+                            "type": "string",
+                            "description": "Member name containing the JCL (for PDS datasets)"
+                        }
+                    },
+                    "required": ["dataset"]
+                }
+            }
+        ],
+        "configuration": {
+            "title": "z/OS Assistant",
+            "properties": {
+                "zosAssistant.defaultProfile": {
+                    "type": "string",
+                    "default": "",
+                    "description": "Default Zowe profile name (leave empty to use Zowe Explorer's active profile)"
+                },
+                "zosAssistant.confirmDangerousOperations": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Require confirmation for dangerous operations (delete, cancel, purge)"
+                },
+                "zosAssistant.protectedDatasetPatterns": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "default": [
+                        "*.PROD.*",
+                        "*.PRD.*",
+                        "*.PRODUCTION.*",
+                        "SYS*.**"
+                    ],
+                    "description": "Dataset name patterns considered as production (wildcards supported)"
+                },
+                "zosAssistant.monitorTimeoutSeconds": {
+                    "type": "number",
+                    "default": 300,
+                    "description": "Maximum wait time in seconds for job monitoring"
+                },
+                "zosAssistant.monitorPollIntervalSeconds": {
+                    "type": "number",
+                    "default": 5,
+                    "description": "Polling interval in seconds for job monitoring"
+                },
+                "zosAssistant.maxSpoolLines": {
+                    "type": "number",
+                    "default": 200,
+                    "description": "Maximum spool lines to display inline (longer files are truncated)"
+                },
+                "zosAssistant.telemetryEnabled": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Enable local usage telemetry (data stays on your machine)"
+                }
+            }
+        }
+    },
+    "scripts": {
+        "vscode:prepublish": "npm run package",
+        "compile": "tsc -p ./",
+        "watch": "tsc -watch -p ./",
+        "lint": "eslint src --ext ts",
+        "lint:fix": "eslint src --ext ts --fix",
+        "bundle": "esbuild src/participant.ts --bundle --outfile=dist/participant.js --external:vscode --external:cpu-features --format=cjs --platform=node --target=node20 --sourcemap",
+        "bundle:watch": "npm run bundle -- --watch",
+        "package": "npm run bundle -- --minify",
+        "vsix": "vsce package --no-dependencies",
+        "vsix:pre": "npm run package && npm run vsix",
+        "test": "jest --config jest.config.js",
+        "clean": "rimraf dist out *.vsix"
+    },
+    "dependencies": {
+        "@zowe/zos-files-for-zowe-sdk": "^8.0.0",
+        "@zowe/zos-jobs-for-zowe-sdk": "^8.0.0",
+        "@zowe/zos-tso-for-zowe-sdk": "^8.0.0",
+        "@zowe/zosmf-for-zowe-sdk": "^8.0.0",
+        "@zowe/zowe-explorer-api": "^3.0.0"
+    },
+    "devDependencies": {
+        "@types/vscode": "^1.93.0",
+        "@types/node": "^20.0.0",
+        "@types/jest": "^29.5.0",
+        "typescript": "^5.5.0",
+        "esbuild": "^0.24.0",
+        "eslint": "^8.0.0",
+        "@typescript-eslint/eslint-plugin": "^7.0.0",
+        "@typescript-eslint/parser": "^7.0.0",
+        "@vscode/vsce": "^3.0.0",
+        "jest": "^29.7.0",
+        "ts-jest": "^29.2.0",
+        "rimraf": "^5.0.0"
+    }
+}
