@@ -1,4 +1,6 @@
 import * as vscode from 'vscode';
+import * as path from 'path';
+import * as fs from 'fs';
 import { List, Download, Upload, Create, Delete, IZosFilesResponse } from '@zowe/zos-files-for-zowe-sdk';
 import { ZoweSessionManager } from '../zowe/session';
 import { TelemetryService } from '../utils/telemetry';
@@ -118,6 +120,21 @@ export class DatasetsHandler {
                 break;
             case 'DATASET_INFO':
                 followups = await this.datasetInfo(session, intent.dataset, stream);
+                break;
+            case 'DOWNLOAD_MEMBER':
+                followups = await this.downloadMember(session, intent.dataset, intent.member, stream, intent.targetDir);
+                break;
+            case 'DOWNLOAD_ALL_MEMBERS':
+                followups = await this.downloadAllMembers(session, intent.dataset, stream, intent.targetDir);
+                break;
+            case 'DOWNLOAD_ALL_DATASETS':
+                followups = await this.downloadAllDatasets(session, intent.pattern, stream, intent.targetDir);
+                break;
+            case 'UPLOAD_FILE_TO_MEMBER':
+                followups = await this.uploadFileToMember(session, intent.localPath, intent.dataset, intent.member, stream);
+                break;
+            case 'UPLOAD_DIR_TO_PDS':
+                followups = await this.uploadDirToPds(session, intent.localPath, intent.dataset, stream);
                 break;
             default:
                 followups = [];
@@ -562,6 +579,305 @@ export class DatasetsHandler {
     // ================================================================
     // Utilitaires
     // ================================================================
+
+    // ================================================================
+    // DOWNLOAD_MEMBER
+    // ================================================================
+    private async downloadMember(
+        session: any,
+        dataset: string,
+        member: string,
+        stream: vscode.ChatResponseStream,
+        targetDir?: string
+    ): Promise<ZosFollowup[]> {
+        const localDir = this.resolveDownloadDir(targetDir);
+        const dsDir = path.join(localDir, dataset.replace(/\./g, path.sep));
+        fs.mkdirSync(dsDir, { recursive: true });
+
+        const ext = this.pdsExtension(dataset);
+        const localFile = path.join(dsDir, `${member.toUpperCase()}${ext}`);
+
+        await Download.dataSet(session, `${dataset}(${member})`, {
+            file: localFile,
+        });
+
+        const relPath = path.relative(
+            vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? localDir,
+            localFile
+        );
+
+        stream.markdown(
+            `### ⬇️ Membre téléchargé — \`${dataset}(${member})\`\n\n` +
+            `Fichier local : \`${relPath}\`\n`
+        );
+
+        stream.button({
+            command: 'vscode.open',
+            title: '📂 Ouvrir le fichier',
+            arguments: [vscode.Uri.file(localFile)],
+        });
+
+        return [
+            followup('📄 Voir les membres', `montre les membres de ${dataset}`, 'ds'),
+            followup('⬇️ Télécharger tous les membres', `download tous les membres de ${dataset}`, 'ds'),
+        ];
+    }
+
+    // ================================================================
+    // DOWNLOAD_ALL_MEMBERS
+    // ================================================================
+    private async downloadAllMembers(
+        session: any,
+        dataset: string,
+        stream: vscode.ChatResponseStream,
+        targetDir?: string
+    ): Promise<ZosFollowup[]> {
+        const localDir = this.resolveDownloadDir(targetDir);
+        const dsDir = path.join(localDir, dataset.replace(/\./g, path.sep));
+        fs.mkdirSync(dsDir, { recursive: true });
+
+        stream.progress(`Téléchargement de tous les membres de ${dataset}...`);
+
+        await Download.allMembers(session, dataset, {
+            directory: dsDir,
+        });
+
+        const files = fs.existsSync(dsDir) ? this.renameDownloadedFiles(dsDir, dataset) : [];
+        const relDir = path.relative(
+            vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? localDir,
+            dsDir
+        );
+
+        stream.markdown(
+            `### ⬇️ Membres téléchargés — \`${dataset}\`\n\n` +
+            `**${files.length} fichier(s)** dans \`${relDir}\`\n`
+        );
+
+        stream.button({
+            command: 'revealFileInOS',
+            title: '📁 Ouvrir le dossier',
+            arguments: [vscode.Uri.file(dsDir)],
+        });
+
+        return [
+            followup('📄 Lister les membres', `montre les membres de ${dataset}`, 'ds'),
+        ];
+    }
+
+    // ================================================================
+    // DOWNLOAD_ALL_DATASETS
+    // ================================================================
+    private async downloadAllDatasets(
+        session: any,
+        pattern: string,
+        stream: vscode.ChatResponseStream,
+        targetDir?: string
+    ): Promise<ZosFollowup[]> {
+        // Step 1 : récupérer la liste des datasets
+        stream.progress(`Récupération de la liste des datasets pour ${pattern}...`);
+        const listResponse = await List.dataSet(session, pattern, { attributes: true });
+        const dataSetObjs = listResponse.apiResponse?.items ?? [];
+
+        if (dataSetObjs.length === 0) {
+            stream.markdown(`Aucun dataset trouvé pour le pattern \`${pattern}\`.`);
+            return [];
+        }
+
+        // Step 2 : téléchargement groupé
+        const localDir = this.resolveDownloadDir(targetDir);
+        fs.mkdirSync(localDir, { recursive: true });
+
+        stream.progress(`Téléchargement de ${dataSetObjs.length} dataset(s)...`);
+
+        await Download.allDataSets(session, dataSetObjs, {
+            directory: localDir,
+        });
+
+        // Step 3 : renommage — majuscules + extension dérivée du nom de PDS
+        stream.progress('Renommage des fichiers téléchargés...');
+        this.renameDatasetFiles(localDir, dataSetObjs);
+
+        const relDir = path.relative(
+            vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? localDir,
+            localDir
+        );
+
+        stream.markdown(
+            `### ⬇️ Datasets téléchargés — \`${pattern}\`\n\n` +
+            `**${dataSetObjs.length} dataset(s)** dans \`${relDir || '.'}\`\n\n` +
+            `| Dataset | Organisation |\n|---------|-------------|\n` +
+            dataSetObjs.slice(0, 20).map((ds: any) =>
+                `| \`${ds.dsname}\` | ${ds.dsorg ?? '-'} |`
+            ).join('\n') +
+            (dataSetObjs.length > 20 ? `\n| ... et ${dataSetObjs.length - 20} autres | |` : '')
+        );
+
+        stream.button({
+            command: 'revealFileInOS',
+            title: '📁 Ouvrir le dossier',
+            arguments: [vscode.Uri.file(localDir)],
+        });
+
+        return [
+            followup('📁 Lister les datasets', `liste les datasets ${pattern}`, 'ds'),
+        ];
+    }
+
+    // ================================================================
+    // UPLOAD_FILE_TO_MEMBER
+    // ================================================================
+    private async uploadFileToMember(
+        session: any,
+        localPath: string,
+        dataset: string,
+        member: string,
+        stream: vscode.ChatResponseStream
+    ): Promise<ZosFollowup[]> {
+        const filePath = this.resolveLocalPath(localPath);
+
+        if (!fs.existsSync(filePath)) {
+            stream.markdown(`❌ Fichier introuvable : \`${filePath}\``);
+            return [];
+        }
+
+        const target = `${dataset}(${member})`;
+        stream.progress(`Upload de \`${filePath}\` vers \`${target}\`...`);
+
+        await Upload.fileToDataset(session, filePath, target);
+
+        const size = fs.statSync(filePath).size;
+        stream.markdown(
+            `### ⬆️ Upload réussi — \`${target}\`\n\n` +
+            `| Propriété | Valeur |\n|-----------|--------|\n` +
+            `| Source | \`${filePath}\` |\n` +
+            `| Taille | ${(size / 1024).toFixed(1)} Ko |\n` +
+            `| Destination | \`${target}\` |\n`
+        );
+
+        return [
+            followup(`📝 Lire ${member}`, `affiche ${dataset}(${member})`, 'ds'),
+            followup('📄 Voir les membres', `montre les membres de ${dataset}`, 'ds'),
+        ];
+    }
+
+    // ================================================================
+    // UPLOAD_DIR_TO_PDS
+    // ================================================================
+    private async uploadDirToPds(
+        session: any,
+        localPath: string,
+        dataset: string,
+        stream: vscode.ChatResponseStream
+    ): Promise<ZosFollowup[]> {
+        const dirPath = this.resolveLocalPath(localPath);
+
+        if (!fs.existsSync(dirPath) || !fs.statSync(dirPath).isDirectory()) {
+            stream.markdown(`❌ Répertoire introuvable : \`${dirPath}\``);
+            return [];
+        }
+
+        const files = fs.readdirSync(dirPath).filter(f =>
+            fs.statSync(path.join(dirPath, f)).isFile()
+        );
+
+        if (files.length === 0) {
+            stream.markdown(`❌ Le répertoire \`${dirPath}\` est vide.`);
+            return [];
+        }
+
+        stream.progress(`Upload de ${files.length} fichier(s) vers \`${dataset}\`...`);
+
+        await Upload.dirToPds(session, dirPath, dataset);
+
+        stream.markdown(
+            `### ⬆️ Upload réussi — \`${dataset}\`\n\n` +
+            `**${files.length} fichier(s)** uploadés depuis \`${dirPath}\`\n\n` +
+            `| Fichier local | Membre |\n|---------------|--------|\n` +
+            files.slice(0, 20).map(f => {
+                const memberName = path.basename(f, path.extname(f)).toUpperCase().slice(0, 8);
+                return `| \`${f}\` | \`${memberName}\` |`;
+            }).join('\n') +
+            (files.length > 20 ? `\n| ... et ${files.length - 20} autres | |` : '')
+        );
+
+        return [
+            followup('📄 Voir les membres uploadés', `montre les membres de ${dataset}`, 'ds'),
+            followup('🔍 Chercher dans le PDS', `cherche IDENTIFICATION dans ${dataset}`, 'ds'),
+        ];
+    }
+
+    private resolveLocalPath(localPath: string): string {
+        if (path.isAbsolute(localPath)) { return localPath; }
+        const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+        return workspaceRoot ? path.join(workspaceRoot, localPath) : localPath;
+    }
+
+    private resolveDownloadDir(targetDir?: string): string {
+        const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+        const base = workspaceRoot ?? require('os').homedir();
+        return targetDir
+            ? path.isAbsolute(targetDir) ? targetDir : path.join(base, targetDir)
+            : path.join(base, 'downloads');
+    }
+
+    /**
+     * Déduit l'extension locale à partir des qualificateurs du nom de PDS.
+     * Ex : HLQ.COBOL.SRC → .cbl, HLQ.JCL.CNTL → .jcl
+     */
+    private pdsExtension(dataset: string): string {
+        for (const part of dataset.toUpperCase().split('.')) {
+            if (/^(COBOL|CBL|COB)$/.test(part))           { return '.cbl'; }
+            if (/^(JCL|CNTL|JCLLIB)$/.test(part))         { return '.jcl'; }
+            if (/^(PROC|PROCLIB)$/.test(part))             { return '.proc'; }
+            if (/^(ASM|ASSEM|MACLIB|MAC)$/.test(part))     { return '.asm'; }
+            if (/^(COPY|CPY|COPYBOOK|COPYLIB)$/.test(part)){ return '.cpy'; }
+            if (/^(PLI|PL1)$/.test(part))                  { return '.pli'; }
+            if (/^(REXX|EXEC)$/.test(part))                { return '.rexx'; }
+            if (/^(XML)$/.test(part))                      { return '.xml'; }
+        }
+        return '.txt';
+    }
+
+    /**
+     * Renomme les fichiers déposés par le SDK dans `dir` :
+     * majuscules + extension dérivée du PDS.
+     */
+    private renameDownloadedFiles(dir: string, dataset: string): string[] {
+        const ext = this.pdsExtension(dataset);
+        return fs.readdirSync(dir, { withFileTypes: true })
+            .filter(e => e.isFile())
+            .map(e => {
+                const oldPath = path.join(dir, e.name);
+                const newName = path.basename(e.name, path.extname(e.name)).toUpperCase() + ext;
+                const newPath = path.join(dir, newName);
+                if (oldPath !== newPath) { fs.renameSync(oldPath, newPath); }
+                return newName;
+            });
+    }
+
+    /**
+     * Post-traitement après Download.allDataSets :
+     * - PDS (dsorg PO) : renomme les membres dans le sous-répertoire
+     * - Séquentiel     : renomme le fichier lui-même
+     */
+    private renameDatasetFiles(localDir: string, dataSetObjs: any[]): void {
+        for (const ds of dataSetObjs) {
+            const dsLocalPath = path.join(localDir, ds.dsname.replace(/\./g, path.sep));
+            if (!fs.existsSync(dsLocalPath)) { continue; }
+
+            if (fs.statSync(dsLocalPath).isDirectory()) {
+                // PDS : les membres sont dans ce répertoire
+                this.renameDownloadedFiles(dsLocalPath, ds.dsname);
+            } else {
+                // Séquentiel : renommer le fichier lui-même
+                const ext = this.pdsExtension(ds.dsname);
+                const dir = path.dirname(dsLocalPath);
+                const newName = path.basename(dsLocalPath).toUpperCase() + ext;
+                const newPath = path.join(dir, newName);
+                if (dsLocalPath !== newPath) { fs.renameSync(dsLocalPath, newPath); }
+            }
+        }
+    }
 
     private extractDatasetName(intent: DsIntent): string {
         switch (intent.type) {

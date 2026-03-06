@@ -6,6 +6,36 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and
 
 ---
 
+## [0.2.0] - 2026-03-05
+
+### Added
+
+#### `/ds` — Dataset & member download
+
+- `DOWNLOAD_MEMBER` — Download a PDS member to the local workspace (`downloads/<DATASET>/<MEMBER>.ext`)
+- `DOWNLOAD_ALL_MEMBERS` — Download all members of a PDS in a single operation via `Download.allMembers()`
+- `DOWNLOAD_ALL_DATASETS` — Download all datasets matching a pattern via `List.dataSet()` + `Download.allDataSets()`
+- Contextual "Open file" / "Open folder" buttons after each download
+- Local filenames in uppercase, extension derived from PDS qualifiers (`.cbl`, `.jcl`, `.asm`, `.cpy`, `.pli`, `.rexx`…)
+- Configurable target directory per request (`targetDir`), defaults to `<workspace>/downloads/`
+
+#### `/ds` — Local → mainframe upload
+
+- `UPLOAD_FILE_TO_MEMBER` — Upload a local file to a PDS member via `Upload.fileToDataset()` (absolute or workspace-relative path)
+- `UPLOAD_DIR_TO_PDS` — Upload all files from a local directory to a PDS via `Upload.dirToPds()` (each file becomes a member, name truncated to 8 characters)
+- Upload report: source files, size, created members
+- Automatic resolution of relative paths from the workspace root
+
+#### Language Model Tools
+
+- `#zos_downloadMember` — Download a PDS member to the local workspace
+- `#zos_downloadAllMembers` — Download all members of a PDS
+- `#zos_downloadAllDatasets` — Download all datasets matching a pattern
+- `#zos_uploadFileToPds` — Upload a local file to a PDS member
+- `#zos_uploadDirToPds` — Upload a local directory to a PDS
+
+---
+
 ## [0.1.0] - 2026-03-04
 
 ### Added

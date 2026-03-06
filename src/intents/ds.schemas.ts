@@ -13,7 +13,12 @@ export type DsIntent =
     | DeleteMemberIntent
     | DeleteDatasetIntent
     | SearchContentIntent
-    | DatasetInfoIntent;
+    | DatasetInfoIntent
+    | DownloadMemberIntent
+    | DownloadAllMembersIntent
+    | DownloadAllDatasetsIntent
+    | UploadFileToMemberIntent
+    | UploadDirToPdsIntent;
 
 export interface ListDatasetsIntent {
     type: 'LIST_DATASETS';
@@ -80,6 +85,38 @@ export interface DatasetInfoIntent {
     dataset: string;
 }
 
+export interface DownloadMemberIntent {
+    type: 'DOWNLOAD_MEMBER';
+    dataset: string;
+    member: string;
+    targetDir?: string;
+}
+
+export interface DownloadAllMembersIntent {
+    type: 'DOWNLOAD_ALL_MEMBERS';
+    dataset: string;
+    targetDir?: string;
+}
+
+export interface DownloadAllDatasetsIntent {
+    type: 'DOWNLOAD_ALL_DATASETS';
+    pattern: string;
+    targetDir?: string;
+}
+
+export interface UploadFileToMemberIntent {
+    type: 'UPLOAD_FILE_TO_MEMBER';
+    localPath: string; // chemin local (absolu ou relatif au workspace)
+    dataset: string;   // PDS cible
+    member: string;    // nom du membre cible
+}
+
+export interface UploadDirToPdsIntent {
+    type: 'UPLOAD_DIR_TO_PDS';
+    localPath: string; // répertoire local (absolu ou relatif au workspace)
+    dataset: string;   // PDS cible
+}
+
 // ============================================================
 // Safety levels — contrôle les confirmations requises
 // ============================================================
@@ -92,6 +129,11 @@ export const INTENT_SAFETY: Record<DsIntent['type'], SafetyLevel> = {
     READ_MEMBER: 'safe',
     DATASET_INFO: 'safe',
     SEARCH_CONTENT: 'safe',
+    DOWNLOAD_MEMBER: 'safe',
+    DOWNLOAD_ALL_MEMBERS: 'safe',
+    DOWNLOAD_ALL_DATASETS: 'safe',
+    UPLOAD_FILE_TO_MEMBER: 'moderate',
+    UPLOAD_DIR_TO_PDS: 'moderate',
     CREATE_MEMBER: 'moderate',
     WRITE_MEMBER: 'moderate',
     CREATE_DATASET: 'moderate',

@@ -31,6 +31,11 @@ en UNE SEULE opération sur les datasets z/OS et extraire les paramètres néces
 | DELETE_DATASET | Supprimer un dataset entier | dataset (string) |
 | SEARCH_CONTENT | Chercher du texte dans les membres d'un PDS | dataset (string), searchTerm (string), memberPattern? |
 | DATASET_INFO | Obtenir les caractéristiques d'un dataset | dataset (string) |
+| DOWNLOAD_MEMBER | Télécharger un membre PDS vers le workspace local | dataset (string), member (string), targetDir? (string) |
+| DOWNLOAD_ALL_MEMBERS | Télécharger tous les membres d'un PDS vers un dossier local | dataset (string), targetDir? (string) |
+| DOWNLOAD_ALL_DATASETS | Télécharger tous les datasets correspondant à un pattern | pattern (string), targetDir? (string) |
+| UPLOAD_FILE_TO_MEMBER | Uploader un fichier local vers un membre PDS | localPath (string), dataset (string), member (string) |
+| UPLOAD_DIR_TO_PDS | Uploader un répertoire local vers un PDS (chaque fichier devient un membre) | localPath (string), dataset (string) |
 
 ## Exemples
 
@@ -57,6 +62,24 @@ Requête: "cherche PERFORM dans HLQ.COBOL.SRC"
 
 Requête: "crée un PDS HLQ.NEW.SRC avec LRECL 80"
 → { "type": "CREATE_DATASET", "name": "HLQ.NEW.SRC", "dsorg": "PO", "lrecl": 80 }
+
+Requête: "télécharge le membre PGMA de HLQ.COBOL.SRC"
+→ { "type": "DOWNLOAD_MEMBER", "dataset": "HLQ.COBOL.SRC", "member": "PGMA" }
+
+Requête: "download tous les membres de HLQ.COBOL.SRC"
+→ { "type": "DOWNLOAD_ALL_MEMBERS", "dataset": "HLQ.COBOL.SRC" }
+
+Requête: "télécharge tous les datasets HLQ.PROD.**"
+→ { "type": "DOWNLOAD_ALL_DATASETS", "pattern": "HLQ.PROD.**" }
+
+Requête: "upload le fichier PGMA.cbl vers HLQ.COBOL.SRC(PGMA)"
+→ { "type": "UPLOAD_FILE_TO_MEMBER", "localPath": "PGMA.cbl", "dataset": "HLQ.COBOL.SRC", "member": "PGMA" }
+
+Requête: "envoie le répertoire ./cobol vers HLQ.COBOL.SRC"
+→ { "type": "UPLOAD_DIR_TO_PDS", "localPath": "./cobol", "dataset": "HLQ.COBOL.SRC" }
+
+Requête: "pousse C:/code/jcl vers HLQ.JCL.CNTL"
+→ { "type": "UPLOAD_DIR_TO_PDS", "localPath": "C:/code/jcl", "dataset": "HLQ.JCL.CNTL" }
 
 ## Instructions
 - Réponds UNIQUEMENT avec un objet JSON valide, sans markdown, sans explication

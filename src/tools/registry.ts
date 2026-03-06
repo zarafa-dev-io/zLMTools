@@ -1,5 +1,7 @@
 import * as vscode from 'vscode';
-import { List, Download } from '@zowe/zos-files-for-zowe-sdk';
+import * as path from 'path';
+import * as fs from 'fs';
+import { List, Download, Upload } from '@zowe/zos-files-for-zowe-sdk';
 import { GetJobs, SubmitJobs } from '@zowe/zos-jobs-for-zowe-sdk';
 import { ZoweSessionManager } from '../zowe/session';
 import { isProtectedDataset } from '../zowe/safety';
@@ -16,6 +18,35 @@ import { TelemetryService } from '../utils/telemetry';
 //   /ds, /jobs, /run  → l'utilisateur choisit la commande
 //   #zos_*            → le LLM décide quand appeler
 // ============================================================
+
+/** Déduit l'extension locale à partir des qualificateurs du nom de PDS. */
+function pdsExtension(dataset: string): string {
+    for (const part of dataset.toUpperCase().split('.')) {
+        if (/^(COBOL|CBL|COB)$/.test(part))            { return '.cbl'; }
+        if (/^(JCL|CNTL|JCLLIB)$/.test(part))          { return '.jcl'; }
+        if (/^(PROC|PROCLIB)$/.test(part))              { return '.proc'; }
+        if (/^(ASM|ASSEM|MACLIB|MAC)$/.test(part))      { return '.asm'; }
+        if (/^(COPY|CPY|COPYBOOK|COPYLIB)$/.test(part)) { return '.cpy'; }
+        if (/^(PLI|PL1)$/.test(part))                   { return '.pli'; }
+        if (/^(REXX|EXEC)$/.test(part))                 { return '.rexx'; }
+        if (/^(XML)$/.test(part))                       { return '.xml'; }
+    }
+    return '.txt';
+}
+
+/** Renomme les fichiers déposés par le SDK : majuscules + extension PDS. */
+function renameDownloadedFiles(dir: string, dataset: string): string[] {
+    const ext = pdsExtension(dataset);
+    return fs.readdirSync(dir, { withFileTypes: true })
+        .filter(e => e.isFile())
+        .map(e => {
+            const oldPath = path.join(dir, e.name);
+            const newName = path.basename(e.name, path.extname(e.name)).toUpperCase() + ext;
+            const newPath = path.join(dir, newName);
+            if (oldPath !== newPath) { fs.renameSync(oldPath, newPath); }
+            return newName;
+        });
+}
 
 export function registerTools(
     context: vscode.ExtensionContext,
@@ -211,6 +242,237 @@ export function registerTools(
                             totalMembers: members.length,
                             matchingMembers: results.length,
                             results,
+                        }, null, 2)
+                    )
+                ]);
+            }
+        })
+    );
+
+    // DOWNLOAD MEMBER
+    context.subscriptions.push(
+        vscode.lm.registerTool('zos_downloadMember', {
+            async invoke(
+                options: vscode.LanguageModelToolInvocationOptions<{
+                    dataset: string;
+                    member: string;
+                    targetDir?: string;
+                }>,
+                _token: vscode.CancellationToken
+            ) {
+                const { session } = await sessionManager.getSession();
+                const { dataset, member, targetDir } = options.input;
+
+                const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath
+                    ?? require('os').homedir();
+                const base = targetDir
+                    ? (path.isAbsolute(targetDir) ? targetDir : path.join(workspaceRoot, targetDir))
+                    : path.join(workspaceRoot, 'downloads');
+
+                const dsDir = path.join(base, dataset.replace(/\./g, path.sep));
+                fs.mkdirSync(dsDir, { recursive: true });
+
+                const localFile = path.join(dsDir, `${member.toUpperCase()}${pdsExtension(dataset)}`);
+
+                await Download.dataSet(session, `${dataset}(${member})`, { file: localFile });
+
+                telemetry.trackSuccess('tool', 'zos_downloadMember');
+
+                return new vscode.LanguageModelToolResult([
+                    new vscode.LanguageModelTextPart(
+                        JSON.stringify({ status: 'success', localFile, dataset, member }, null, 2)
+                    )
+                ]);
+            }
+        })
+    );
+
+    // DOWNLOAD ALL MEMBERS
+    context.subscriptions.push(
+        vscode.lm.registerTool('zos_downloadAllMembers', {
+            async invoke(
+                options: vscode.LanguageModelToolInvocationOptions<{
+                    dataset: string;
+                    targetDir?: string;
+                }>,
+                _token: vscode.CancellationToken
+            ) {
+                const { session } = await sessionManager.getSession();
+                const { dataset, targetDir } = options.input;
+
+                const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath
+                    ?? require('os').homedir();
+                const base = targetDir
+                    ? (path.isAbsolute(targetDir) ? targetDir : path.join(workspaceRoot, targetDir))
+                    : path.join(workspaceRoot, 'downloads');
+
+                const dsDir = path.join(base, dataset.replace(/\./g, path.sep));
+                fs.mkdirSync(dsDir, { recursive: true });
+
+                await Download.allMembers(session, dataset, { directory: dsDir });
+
+                const files = fs.existsSync(dsDir) ? renameDownloadedFiles(dsDir, dataset) : [];
+
+                telemetry.trackSuccess('tool', 'zos_downloadAllMembers');
+
+                return new vscode.LanguageModelToolResult([
+                    new vscode.LanguageModelTextPart(
+                        JSON.stringify({ status: 'success', localDirectory: dsDir, fileCount: files.length, files }, null, 2)
+                    )
+                ]);
+            }
+        })
+    );
+
+    // DOWNLOAD ALL DATASETS
+    context.subscriptions.push(
+        vscode.lm.registerTool('zos_downloadAllDatasets', {
+            async invoke(
+                options: vscode.LanguageModelToolInvocationOptions<{
+                    pattern: string;
+                    targetDir?: string;
+                }>,
+                _token: vscode.CancellationToken
+            ) {
+                const { session } = await sessionManager.getSession();
+                const { pattern, targetDir } = options.input;
+
+                const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath
+                    ?? require('os').homedir();
+                const localDir = targetDir
+                    ? (path.isAbsolute(targetDir) ? targetDir : path.join(workspaceRoot, targetDir))
+                    : path.join(workspaceRoot, 'downloads');
+                fs.mkdirSync(localDir, { recursive: true });
+
+                const listResponse = await List.dataSet(session, pattern, { attributes: true });
+                const dataSetObjs = listResponse.apiResponse?.items ?? [];
+
+                if (dataSetObjs.length === 0) {
+                    return new vscode.LanguageModelToolResult([
+                        new vscode.LanguageModelTextPart(
+                            JSON.stringify({ status: 'no_datasets', pattern }, null, 2)
+                        )
+                    ]);
+                }
+
+                await Download.allDataSets(session, dataSetObjs, { directory: localDir });
+
+                // Renommage : majuscules + extension dérivée du nom de PDS
+                for (const ds of dataSetObjs) {
+                    const dsLocalPath = path.join(localDir, ds.dsname.replace(/\./g, path.sep));
+                    if (!fs.existsSync(dsLocalPath)) { continue; }
+
+                    if (fs.statSync(dsLocalPath).isDirectory()) {
+                        renameDownloadedFiles(dsLocalPath, ds.dsname);
+                    } else {
+                        const ext = pdsExtension(ds.dsname);
+                        const dir = path.dirname(dsLocalPath);
+                        const newName = path.basename(dsLocalPath).toUpperCase() + ext;
+                        const newPath = path.join(dir, newName);
+                        if (dsLocalPath !== newPath) { fs.renameSync(dsLocalPath, newPath); }
+                    }
+                }
+
+                telemetry.trackSuccess('tool', 'zos_downloadAllDatasets');
+
+                return new vscode.LanguageModelToolResult([
+                    new vscode.LanguageModelTextPart(
+                        JSON.stringify({
+                            status: 'success',
+                            localDirectory: localDir,
+                            datasetCount: dataSetObjs.length,
+                            datasets: dataSetObjs.map((ds: any) => ds.dsname),
+                        }, null, 2)
+                    )
+                ]);
+            }
+        })
+    );
+
+    // UPLOAD FILE TO MEMBER
+    context.subscriptions.push(
+        vscode.lm.registerTool('zos_uploadFileToPds', {
+            async invoke(
+                options: vscode.LanguageModelToolInvocationOptions<{
+                    localPath: string;
+                    dataset: string;
+                    member: string;
+                }>,
+                _token: vscode.CancellationToken
+            ) {
+                const { session } = await sessionManager.getSession();
+                const { localPath, dataset, member } = options.input;
+
+                const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath
+                    ?? require('os').homedir();
+                const filePath = path.isAbsolute(localPath)
+                    ? localPath
+                    : path.join(workspaceRoot, localPath);
+
+                if (!fs.existsSync(filePath)) {
+                    return new vscode.LanguageModelToolResult([
+                        new vscode.LanguageModelTextPart(
+                            JSON.stringify({ status: 'error', message: `File not found: ${filePath}` }, null, 2)
+                        )
+                    ]);
+                }
+
+                const target = `${dataset}(${member})`;
+                await Upload.fileToDataset(session, filePath, target);
+
+                telemetry.trackSuccess('tool', 'zos_uploadFileToPds');
+
+                return new vscode.LanguageModelToolResult([
+                    new vscode.LanguageModelTextPart(
+                        JSON.stringify({ status: 'success', localFile: filePath, target }, null, 2)
+                    )
+                ]);
+            }
+        })
+    );
+
+    // UPLOAD DIR TO PDS
+    context.subscriptions.push(
+        vscode.lm.registerTool('zos_uploadDirToPds', {
+            async invoke(
+                options: vscode.LanguageModelToolInvocationOptions<{
+                    localPath: string;
+                    dataset: string;
+                }>,
+                _token: vscode.CancellationToken
+            ) {
+                const { session } = await sessionManager.getSession();
+                const { localPath, dataset } = options.input;
+
+                const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath
+                    ?? require('os').homedir();
+                const dirPath = path.isAbsolute(localPath)
+                    ? localPath
+                    : path.join(workspaceRoot, localPath);
+
+                if (!fs.existsSync(dirPath) || !fs.statSync(dirPath).isDirectory()) {
+                    return new vscode.LanguageModelToolResult([
+                        new vscode.LanguageModelTextPart(
+                            JSON.stringify({ status: 'error', message: `Directory not found: ${dirPath}` }, null, 2)
+                        )
+                    ]);
+                }
+
+                await Upload.dirToPds(session, dirPath, dataset);
+
+                const files = fs.readdirSync(dirPath)
+                    .filter(f => fs.statSync(path.join(dirPath, f)).isFile());
+
+                telemetry.trackSuccess('tool', 'zos_uploadDirToPds');
+
+                return new vscode.LanguageModelToolResult([
+                    new vscode.LanguageModelTextPart(
+                        JSON.stringify({
+                            status: 'success',
+                            localDirectory: dirPath,
+                            dataset,
+                            uploadedFiles: files.length,
+                            members: files.map(f => path.basename(f, path.extname(f)).toUpperCase().slice(0, 8)),
                         }, null, 2)
                     )
                 ]);
