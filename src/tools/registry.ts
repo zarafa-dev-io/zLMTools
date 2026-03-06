@@ -650,6 +650,86 @@ export function registerTools(
         })
     );
 
+    // SUBMIT LOCAL JCL FILE (avec confirmation)
+    context.subscriptions.push(
+        vscode.lm.registerTool('zos_submitLocalJcl', {
+
+            async prepareInvocation(
+                options: vscode.LanguageModelToolInvocationPrepareOptions<{
+                    localPath: string;
+                    monitor?: boolean;
+                }>,
+                _token: vscode.CancellationToken
+            ) {
+                const fileName = require('path').basename(options.input.localPath);
+                return {
+                    invocationMessage: `Submitting local JCL file ${fileName}`,
+                    confirmationMessages: {
+                        title: `Submit local JCL file`,
+                        message: new vscode.MarkdownString(
+                            `Submit \`${fileName}\` to z/OS?` +
+                            (options.input.monitor ? '\n\nThe job will be monitored until completion.' : '')
+                        ),
+                    },
+                };
+            },
+
+            async invoke(
+                options: vscode.LanguageModelToolInvocationOptions<{
+                    localPath: string;
+                    monitor?: boolean;
+                }>,
+                _token: vscode.CancellationToken
+            ) {
+                const { session } = await sessionManager.getSession();
+                const { localPath, monitor } = options.input;
+
+                const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath
+                    ?? require('os').homedir();
+                const filePath = path.isAbsolute(localPath)
+                    ? localPath
+                    : path.join(workspaceRoot, localPath);
+
+                if (!fs.existsSync(filePath)) {
+                    return new vscode.LanguageModelToolResult([
+                        new vscode.LanguageModelTextPart(
+                            JSON.stringify({ status: 'error', message: `File not found: ${filePath}` }, null, 2)
+                        )
+                    ]);
+                }
+
+                const jcl = fs.readFileSync(filePath, 'utf-8');
+
+                if (!jcl.includes('//') || !jcl.includes(' JOB ')) {
+                    return new vscode.LanguageModelToolResult([
+                        new vscode.LanguageModelTextPart(
+                            JSON.stringify({ status: 'error', message: 'File does not appear to contain valid JCL (missing JOB card)' }, null, 2)
+                        )
+                    ]);
+                }
+
+                const { SubmitJobs } = await import('@zowe/zos-jobs-for-zowe-sdk');
+                const job = await SubmitJobs.submitJcl(session, jcl);
+
+                telemetry.trackSuccess('tool', 'zos_submitLocalJcl');
+
+                return new vscode.LanguageModelToolResult([
+                    new vscode.LanguageModelTextPart(
+                        JSON.stringify({
+                            status: 'success',
+                            localFile: filePath,
+                            jobname: job.jobname,
+                            jobid: job.jobid,
+                            owner: job.owner,
+                            class: job.class,
+                            jobStatus: job.status,
+                        }, null, 2)
+                    )
+                ]);
+            }
+        })
+    );
+
     // ── SUBMIT JCL (avec confirmation) ──────────────────────
 
     context.subscriptions.push(

@@ -7,7 +7,9 @@ export type RunIntent =
     | SubmitDatasetIntent
     | SubmitInlineIntent
     | SubmitAndMonitorIntent
-    | ResubmitIntent;
+    | ResubmitIntent
+    | SubmitLocalFileIntent
+    | SubmitLocalFileAndMonitorIntent;
 
 export interface SubmitDatasetIntent {
     type: 'SUBMIT_DATASET';
@@ -33,6 +35,17 @@ export interface ResubmitIntent {
     jobName?: string;
 }
 
+export interface SubmitLocalFileIntent {
+    type: 'SUBMIT_LOCAL_FILE';
+    localPath: string;      // chemin local (absolu ou relatif au workspace)
+}
+
+export interface SubmitLocalFileAndMonitorIntent {
+    type: 'SUBMIT_LOCAL_FILE_AND_MONITOR';
+    localPath: string;
+    autoDisplay?: boolean;  // afficher le spool automatiquement à la fin
+}
+
 // ============================================================
 // Safety levels — toute soumission est au minimum "moderate"
 // ============================================================
@@ -44,4 +57,6 @@ export const RUN_INTENT_SAFETY: Record<RunIntent['type'], SafetyLevel> = {
     SUBMIT_INLINE: 'moderate',
     SUBMIT_AND_MONITOR: 'moderate',
     RESUBMIT: 'moderate',
+    SUBMIT_LOCAL_FILE: 'moderate',
+    SUBMIT_LOCAL_FILE_AND_MONITOR: 'moderate',
 };

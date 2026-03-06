@@ -1,4 +1,6 @@
 import * as vscode from 'vscode';
+import * as fs from 'fs';
+import * as path from 'path';
 import {
     SubmitJobs,
     GetJobs,
@@ -109,6 +111,14 @@ export class RunHandler {
             case 'RESUBMIT':
                 followups = await this.resubmit(session, intent, stream, token);
                 break;
+            case 'SUBMIT_LOCAL_FILE':
+                followups = await this.submitLocalFile(session, intent.localPath, stream);
+                break;
+            case 'SUBMIT_LOCAL_FILE_AND_MONITOR':
+                followups = await this.submitLocalFileAndMonitor(
+                    session, intent.localPath, intent.autoDisplay ?? true, stream, token
+                );
+                break;
             default:
                 followups = [];
         }
@@ -191,16 +201,27 @@ export class RunHandler {
         stream.progress(`Soumission de ${fullName}...`);
         const job: IJob = await SubmitJobs.submitJob(session, fullName);
 
-        const statusEmoji = '🚀';
         stream.markdown(
-            `${statusEmoji} **Job soumis** — \`${job.jobname}\` (\`${job.jobid}\`)\n\n` +
-            `Source : \`${fullName}\`\n\n` +
-            `---\n\n` +
-            `### ⏳ Surveillance en cours...\n\n`
+            `🚀 **Job soumis** — \`${job.jobname}\` (\`${job.jobid}\`)\n\n` +
+            `Source : \`${fullName}\`\n\n`
         );
 
-        // Phase 2 : Monitoring (polling)
-        const MAX_WAIT_MS = 10 * 60 * 1000; // 10 minutes pour submit+monitor
+        return this.monitorSubmittedJob(session, job, autoDisplay, stream, token);
+    }
+
+    // ================================================================
+    // Boucle de monitoring partagée (submitAndMonitor + submitLocalFileAndMonitor)
+    // ================================================================
+    private async monitorSubmittedJob(
+        session: any,
+        job: IJob,
+        autoDisplay: boolean,
+        stream: vscode.ChatResponseStream,
+        token: vscode.CancellationToken
+    ): Promise<ZosFollowup[]> {
+        stream.markdown(`---\n\n### ⏳ Surveillance en cours...\n\n`);
+
+        const MAX_WAIT_MS = 10 * 60 * 1000;
         const POLL_INTERVAL_MS = 5000;
         const startTime = Date.now();
         let lastStatus = job.status;
@@ -245,11 +266,8 @@ export class RunHandler {
             return [];
         }
 
-        if (!completedJob) {
-            return [];
-        }
+        if (!completedJob) { return []; }
 
-        // Phase 3 : Résultat
         const elapsed_s = Math.round((Date.now() - startTime) / 1000);
         const rc = this.formatReturnCode(completedJob);
         const emoji = this.getStatusEmoji(completedJob.status, completedJob.retcode);
@@ -260,7 +278,6 @@ export class RunHandler {
             `→ **${rc}** en ${elapsed_s}s\n\n`
         );
 
-        // Phase 4 : Affichage automatique du spool si demandé
         if (autoDisplay) {
             await this.displayJobSpool(session, completedJob, isError, stream);
         } else if (isError) {
@@ -269,6 +286,11 @@ export class RunHandler {
                 `\`/jobs montre le JESMSGLG de ${completedJob.jobid}\` pour diagnostiquer.\n`
             );
         }
+
+        return [
+            followup(`🔍 Statut de ${completedJob.jobid}`, `statut de ${completedJob.jobid}`, 'jobs'),
+            followup(`📜 Spool de ${completedJob.jobid}`, `montre la sortie de ${completedJob.jobid}`, 'jobs'),
+        ];
     }
 
     // ================================================================
@@ -553,6 +575,87 @@ export class RunHandler {
         return result;
     }
 
+    // ================================================================
+    // SUBMIT_LOCAL_FILE — Soumettre un fichier JCL local
+    // ================================================================
+    private async submitLocalFile(
+        session: any,
+        localPath: string,
+        stream: vscode.ChatResponseStream
+    ): Promise<ZosFollowup[]> {
+        const jcl = this.readLocalJcl(localPath, stream);
+        if (!jcl) { return []; }
+
+        const fileName = path.basename(localPath);
+        stream.progress(`Submitting ${fileName}...`);
+        const job: IJob = await SubmitJobs.submitJcl(session, jcl);
+
+        const lines = jcl.split('\n');
+        const preview = lines.slice(0, 10).join('\n');
+        stream.markdown(
+            `### Submitted JCL — \`${fileName}\`\n\n` +
+            `\`\`\`jcl\n${preview}${lines.length > 10 ? `\n... (${lines.length} lines total)` : ''}\n\`\`\`\n\n`
+        );
+
+        return this.displaySubmitResult(job, fileName, stream);
+    }
+
+    // ================================================================
+    // SUBMIT_LOCAL_FILE_AND_MONITOR — Soumettre + surveiller
+    // ================================================================
+    private async submitLocalFileAndMonitor(
+        session: any,
+        localPath: string,
+        autoDisplay: boolean,
+        stream: vscode.ChatResponseStream,
+        token: vscode.CancellationToken
+    ): Promise<ZosFollowup[]> {
+        const jcl = this.readLocalJcl(localPath, stream);
+        if (!jcl) { return []; }
+
+        const fileName = path.basename(localPath);
+        stream.progress(`Submitting ${fileName}...`);
+        const job: IJob = await SubmitJobs.submitJcl(session, jcl);
+
+        stream.markdown(
+            `🚀 **Job submitted** — \`${job.jobname}\` (\`${job.jobid}\`)\n\n` +
+            `Source: \`${fileName}\`\n\n`
+        );
+
+        return this.monitorSubmittedJob(session, job, autoDisplay, stream, token);
+    }
+
+    /**
+     * Lit un fichier JCL local et valide sa structure minimale.
+     * Retourne le contenu ou null si erreur (avec message dans stream).
+     */
+    private readLocalJcl(localPath: string, stream: vscode.ChatResponseStream): string | null {
+        const filePath = this.resolveLocalPath(localPath);
+
+        if (!fs.existsSync(filePath)) {
+            stream.markdown(`❌ File not found: \`${filePath}\``);
+            return null;
+        }
+
+        const jcl = fs.readFileSync(filePath, 'utf-8');
+
+        if (!jcl.includes('//') || !jcl.includes(' JOB ')) {
+            stream.markdown(
+                `⚠️ \`${path.basename(filePath)}\` does not appear to contain valid JCL.\n\n` +
+                `A valid JCL must include at least a JOB card (\`//jobname JOB ...\`).`
+            );
+            return null;
+        }
+
+        return jcl;
+    }
+
+    private resolveLocalPath(localPath: string): string {
+        if (path.isAbsolute(localPath)) { return localPath; }
+        const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+        return workspaceRoot ? path.join(workspaceRoot, localPath) : localPath;
+    }
+
     /**
      * Extrait le nom du dataset pour le safety check
      */
@@ -565,6 +668,9 @@ export class RunHandler {
                 return ''; // pas de dataset à protéger
             case 'RESUBMIT':
                 return ''; // on vérifie à l'exécution
+            case 'SUBMIT_LOCAL_FILE':
+            case 'SUBMIT_LOCAL_FILE_AND_MONITOR':
+                return ''; // fichier local, pas de dataset z/OS
         }
     }
 
@@ -589,6 +695,10 @@ export class RunHandler {
             }
             case 'RESUBMIT':
                 return `Re-soumission du JCL de ${intent.jobId ?? intent.jobName ?? '?'}`;
+            case 'SUBMIT_LOCAL_FILE':
+                return `Submit local JCL file \`${intent.localPath}\``;
+            case 'SUBMIT_LOCAL_FILE_AND_MONITOR':
+                return `Submit and monitor local JCL file \`${intent.localPath}\``;
         }
     }
 

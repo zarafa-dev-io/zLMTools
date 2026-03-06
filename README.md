@@ -69,15 +69,17 @@ Monitor and manage your batch jobs with visual status indicators.
 
 ### `@zos /run` — JCL Submission
 
-Submit JCL from datasets, inline, or resubmit previous jobs.
+Submit JCL from datasets, local files, inline, or resubmit previous jobs.
 
 ```
 @zos /run submit HLQ.JCL(BATCH01)
 @zos /run launch HLQ.JCL(COMPILE) and monitor
 @zos /run resubmit job JOB12345
+@zos /run submit local file ./downloads/HLQ/JCL/CNTL/BATCH01.jcl
+@zos /run submit and monitor downloads/HLQ/JCL/CNTL/NIGHTLY.jcl
 ```
 
-**4 operations:** submit from dataset, submit inline JCL, submit + auto-monitor with spool display, resubmit from previous job.
+**6 operations:** submit from dataset, submit from local file, submit inline JCL, submit + auto-monitor with spool display, resubmit from previous job.
 
 ---
 
@@ -148,6 +150,7 @@ In addition to chat commands, z/OS Assistant exposes the following tools that Co
 - **`#zos_listJobs`** — List jobs by owner, prefix, or status
 - **`#zos_getJobStatus`** — Get detailed job status and return code
 - **`#zos_getJobOutput`** — Retrieve spool output (SYSPRINT, JESMSGLG…)
+- **`#zos_submitLocalJcl`** — Submit a local JCL file to z/OS
 - **`#zos_submitJcl`** — Submit JCL from a dataset member
 
 ---
