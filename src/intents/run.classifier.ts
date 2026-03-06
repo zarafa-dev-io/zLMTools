@@ -24,6 +24,8 @@ en UNE SEULE opération de soumission de JCL et extraire les paramètres nécess
 | SUBMIT_INLINE | Soumettre du JCL fourni directement | jcl (string) |
 | SUBMIT_AND_MONITOR | Soumettre puis surveiller jusqu'à complétion | dataset (string), member? (string), autoDisplay? (bool) |
 | RESUBMIT | Re-soumettre le JCL d'un job précédent | jobId? (string), jobName? (string) |
+| SUBMIT_LOCAL_FILE | Soumettre un fichier JCL local | localPath (string) |
+| SUBMIT_LOCAL_FILE_AND_MONITOR | Soumettre un fichier JCL local puis surveiller | localPath (string), autoDisplay? (bool) |
 
 ## Exemples
 
@@ -51,6 +53,15 @@ Requête: "re-soumets PAYROLL"
 Requête: "soumets ce JCL : //MYJOB JOB ..."
 → { "type": "SUBMIT_INLINE", "jcl": "//MYJOB JOB ..." }
 
+Requête: "soumets le fichier ./jcl/BATCH01.jcl"
+→ { "type": "SUBMIT_LOCAL_FILE", "localPath": "./jcl/BATCH01.jcl" }
+
+Requête: "lance C:/code/NIGHTLY.jcl et surveille"
+→ { "type": "SUBMIT_LOCAL_FILE_AND_MONITOR", "localPath": "C:/code/NIGHTLY.jcl", "autoDisplay": true }
+
+Requête: "soumets et monitore le fichier downloads/HLQ/JCL/CNTL/BATCH01.jcl"
+→ { "type": "SUBMIT_LOCAL_FILE_AND_MONITOR", "localPath": "downloads/HLQ/JCL/CNTL/BATCH01.jcl", "autoDisplay": true }
+
 ## Instructions
 - Réponds UNIQUEMENT avec un objet JSON valide, sans markdown, sans explication
 - Convertis les noms de datasets et membres en MAJUSCULES
@@ -58,6 +69,7 @@ Requête: "soumets ce JCL : //MYJOB JOB ..."
 - Si la requête contient du JCL brut (lignes commençant par //) → SUBMIT_INLINE
 - Si la requête mentionne "relance", "re-soumets", "resubmit" → RESUBMIT
 - Par défaut, si c'est une soumission simple → SUBMIT_DATASET
+- Si la requête mentionne un chemin local (/, ./, C:/, downloads/, fichier .jcl) → SUBMIT_LOCAL_FILE ou SUBMIT_LOCAL_FILE_AND_MONITOR
 - Si tu ne peux pas classifier, réponds : { "type": "UNKNOWN", "reason": "..." }
 `;
 

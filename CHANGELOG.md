@@ -6,6 +6,27 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and
 
 ---
 
+## [0.3.0] - 2026-03-06
+
+### Added
+
+#### `/run` — Submit local JCL file
+
+- `SUBMIT_LOCAL_FILE` — Read a local JCL file and submit it via `SubmitJobs.submitJcl()` (absolute or workspace-relative path); displays a 10-line preview before submission
+- `SUBMIT_LOCAL_FILE_AND_MONITOR` — Submit a local JCL file then monitor until completion with automatic spool display on finish
+- JCL validation: checks for `//` and `JOB` card before submitting; returns a clear error message if the file is invalid or missing
+- Automatic path resolution: relative paths are resolved from the workspace root (enables seamless use with files downloaded by `DOWNLOAD_ALL_MEMBERS`)
+
+#### Language Model Tools
+
+- `#zos_submitLocalJcl` — Submit a local JCL file to z/OS with confirmation dialog; returns jobname, jobid, owner and status
+
+#### Internal refactoring
+
+- Extracted `monitorSubmittedJob()` helper in `RunHandler` — shared by `SUBMIT_AND_MONITOR` and `SUBMIT_LOCAL_FILE_AND_MONITOR` to avoid code duplication
+
+---
+
 ## [0.2.0] - 2026-03-05
 
 ### Added
