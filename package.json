@@ -2,7 +2,7 @@
     "name": "zos-copilot-assistant",
     "displayName": "z/OS Assistant for Copilot",
     "description": "Interact with z/OS mainframes directly from GitHub Copilot Chat — manage datasets, jobs, JCL submission via Zowe SDK.",
-    "version": "0.1.2",
+    "version": "0.2.1",
     "publisher": "zarafa-dev-io",
     "license": "MIT",
     "icon": "assets/icon.png",
@@ -47,7 +47,7 @@
                 "commands": [
                     {
                         "name": "ds",
-                        "description": "Datasets & PDS members: list, read, write, search, delete"
+                        "description": "Datasets & PDS members: list, read, write, search, delete, download, upload"
                     },
                     {
                         "name": "jobs",
@@ -267,6 +267,124 @@
                             "description": "Specific DD name to retrieve (e.g. SYSPRINT, JESMSGLG, SYSOUT)"
                         }
                     }
+                }
+            },
+            {
+                "name": "zos_uploadFileToPds",
+                "toolReferenceName": "zos_uploadFileToPds",
+                "displayName": "z/OS: Upload File to Member",
+                "modelDescription": "Upload a local file to a z/OS PDS member. The file content replaces the target member. Use for uploading COBOL source, JCL, copybooks, etc.",
+                "canBeReferencedInPrompt": true,
+                "icon": "$(cloud-upload)",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "localPath": {
+                            "type": "string",
+                            "description": "Local file path to upload (absolute or relative to workspace)"
+                        },
+                        "dataset": {
+                            "type": "string",
+                            "description": "Target PDS dataset name (e.g. HLQ.COBOL.SRC)"
+                        },
+                        "member": {
+                            "type": "string",
+                            "description": "Target member name (e.g. PGMA)"
+                        }
+                    },
+                    "required": ["localPath", "dataset", "member"]
+                }
+            },
+            {
+                "name": "zos_uploadDirToPds",
+                "toolReferenceName": "zos_uploadDirToPds",
+                "displayName": "z/OS: Upload Directory to PDS",
+                "modelDescription": "Upload all files from a local directory to a z/OS PDS. Each file becomes a member (name truncated to 8 chars, extension stripped).",
+                "canBeReferencedInPrompt": true,
+                "icon": "$(cloud-upload)",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "localPath": {
+                            "type": "string",
+                            "description": "Local directory path (absolute or relative to workspace)"
+                        },
+                        "dataset": {
+                            "type": "string",
+                            "description": "Target PDS dataset name (e.g. HLQ.COBOL.SRC)"
+                        }
+                    },
+                    "required": ["localPath", "dataset"]
+                }
+            },
+            {
+                "name": "zos_downloadMember",
+                "toolReferenceName": "zos_downloadMember",
+                "displayName": "z/OS: Download Member",
+                "modelDescription": "Download a single PDS member from z/OS to the local workspace. The file is saved under downloads/<DATASET>/<MEMBER>.txt.",
+                "canBeReferencedInPrompt": true,
+                "icon": "$(cloud-download)",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "dataset": {
+                            "type": "string",
+                            "description": "PDS dataset name (e.g. HLQ.COBOL.SRC)"
+                        },
+                        "member": {
+                            "type": "string",
+                            "description": "Member name (e.g. PGMA)"
+                        },
+                        "targetDir": {
+                            "type": "string",
+                            "description": "Optional local directory path (relative to workspace or absolute). Defaults to workspace/downloads."
+                        }
+                    },
+                    "required": ["dataset", "member"]
+                }
+            },
+            {
+                "name": "zos_downloadAllMembers",
+                "toolReferenceName": "zos_downloadAllMembers",
+                "displayName": "z/OS: Download All Members",
+                "modelDescription": "Download all members of a z/OS PDS dataset to a local directory. Files are saved under downloads/<DATASET>/.",
+                "canBeReferencedInPrompt": true,
+                "icon": "$(cloud-download)",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "dataset": {
+                            "type": "string",
+                            "description": "Fully qualified PDS dataset name (e.g. HLQ.COBOL.SRC)"
+                        },
+                        "targetDir": {
+                            "type": "string",
+                            "description": "Optional local directory path (relative to workspace or absolute). Defaults to workspace/downloads."
+                        }
+                    },
+                    "required": ["dataset"]
+                }
+            },
+            {
+                "name": "zos_downloadAllDatasets",
+                "toolReferenceName": "zos_downloadAllDatasets",
+                "displayName": "z/OS: Download All Datasets",
+                "modelDescription": "Download all z/OS datasets matching a pattern to a local directory. First lists the datasets then bulk-downloads them.",
+                "canBeReferencedInPrompt": true,
+                "icon": "$(cloud-download)",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "pattern": {
+                            "type": "string",
+                            "description": "Dataset name pattern (e.g. HLQ.COBOL.** or HLQ.*.SRC)"
+                        },
+                        "targetDir": {
+                            "type": "string",
+                            "description": "Optional local directory path (relative to workspace or absolute). Defaults to workspace/downloads."
+                        }
+                    },
+                    "required": ["pattern"]
                 }
             },
             {
