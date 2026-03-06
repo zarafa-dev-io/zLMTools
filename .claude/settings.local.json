@@ -3,7 +3,9 @@
     "allow": [
       "Bash(pnpm vsix:pre)",
       "Bash(pnpm install)",
-      "Bash(CI=true pnpm install)"
+      "Bash(CI=true pnpm install)",
+      "WebFetch(domain:docs.zowe.org)",
+      "Bash(npx tsc --noEmit)"
     ]
   }
 }

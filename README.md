@@ -40,9 +40,14 @@ Browse, read, write, search and manage z/OS datasets and PDS members.
 @zos /ds display HLQ.COBOL.SRC(PGMA)
 @zos /ds search PERFORM in HLQ.COBOL.SRC
 @zos /ds info about HLQ.COBOL.LOAD
+@zos /ds download member PGMA from HLQ.COBOL.SRC
+@zos /ds download all members of HLQ.COBOL.SRC
+@zos /ds download all datasets HLQ.COBOL.**
+@zos /ds upload PGMA.cbl to HLQ.COBOL.SRC(PGMA)
+@zos /ds upload directory ./cobol to HLQ.COBOL.SRC
 ```
 
-**10 operations:** list, read, write, create, delete, search, info — with auto-detected syntax highlighting for COBOL, JCL, and ASM.
+**15 operations:** list, read, write, create, delete, search, info, download, upload — with auto-detected syntax highlighting for COBOL, JCL, and ASM.
 
 ---
 
@@ -135,6 +140,11 @@ In addition to chat commands, z/OS Assistant exposes the following tools that Co
 - **`#zos_readMember`** — Read a PDS member's content
 - **`#zos_datasetInfo`** — Get dataset attributes (DSORG, RECFM, LRECL…)
 - **`#zos_searchContent`** — Search text across a PDS
+- **`#zos_downloadMember`** — Download a single PDS member to the local workspace
+- **`#zos_downloadAllMembers`** — Download all members of a PDS to a local directory
+- **`#zos_downloadAllDatasets`** — Download all datasets matching a pattern
+- **`#zos_uploadFileToPds`** — Upload a local file to a PDS member
+- **`#zos_uploadDirToPds`** — Upload a local directory to a PDS (each file becomes a member)
 - **`#zos_listJobs`** — List jobs by owner, prefix, or status
 - **`#zos_getJobStatus`** — Get detailed job status and return code
 - **`#zos_getJobOutput`** — Retrieve spool output (SYSPRINT, JESMSGLG…)
