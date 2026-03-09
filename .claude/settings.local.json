@@ -5,7 +5,8 @@
       "Bash(pnpm install)",
       "Bash(CI=true pnpm install)",
       "WebFetch(domain:docs.zowe.org)",
-      "Bash(npx tsc --noEmit)"
+      "Bash(npx tsc --noEmit)",
+      "WebFetch(domain:raw.githubusercontent.com)"
     ]
   }
 }

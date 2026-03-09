@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
-import { List, Download, Upload, Create, Delete, IZosFilesResponse } from '@zowe/zos-files-for-zowe-sdk';
+import { List, Download, Upload, Create, Delete, Copy, IZosFilesResponse } from '@zowe/zos-files-for-zowe-sdk';
 import { ZoweSessionManager } from '../zowe/session';
 import { TelemetryService } from '../utils/telemetry';
 import { DsIntentClassifier } from '../intents/ds.classifier';
@@ -113,7 +113,7 @@ export class DatasetsHandler {
                 followups = await this.deleteMember(session, intent.dataset, intent.member, stream);
                 break;
             case 'DELETE_DATASET':
-                followups = await this.deleteDataset(session, intent.dataset, stream);
+                followups = await this.deleteDataset(session, intent.dataset, stream, intent.volume);
                 break;
             case 'SEARCH_CONTENT':
                 followups = await this.searchContent(session, intent.dataset, intent.searchTerm, stream, intent.memberPattern);
@@ -135,6 +135,17 @@ export class DatasetsHandler {
                 break;
             case 'UPLOAD_DIR_TO_PDS':
                 followups = await this.uploadDirToPds(session, intent.localPath, intent.dataset, stream);
+                break;
+            case 'COPY_MEMBER':
+                followups = await this.copyMember(
+                    session, intent.fromDataset, intent.fromMember,
+                    intent.toDataset, intent.toMember, stream, intent.replace
+                );
+                break;
+            case 'COPY_DATASET':
+                followups = await this.copyDataset(
+                    session, intent.fromDataset, intent.toDataset, stream, intent.replace
+                );
                 break;
             default:
                 followups = [];
@@ -334,52 +345,123 @@ export class DatasetsHandler {
     // ================================================================
     // CREATE_DATASET
     // ================================================================
+
+    // Mapping dstype → CreateDataSetTypeEnum numeric value
+    // (const enum is inlined at compile time; we use a map for runtime safety with esbuild)
+    private static readonly DS_TYPE_ENUM: Record<string, number> = {
+        BINARY:      0,  // DATA_SET_BINARY      — PO, U,  blksize=27998, lrecl=27998
+        C:           1,  // DATA_SET_C           — PO, VB, blksize=32760, lrecl=260, dirblk=25
+        CLASSIC:     2,  // DATA_SET_CLASSIC     — PO, FB, blksize=6160,  lrecl=80,  dirblk=25
+        PARTITIONED: 3,  // DATA_SET_PARTITIONED — PO, FB, blksize=6160,  lrecl=80,  dirblk=5
+        SEQUENTIAL:  4,  // DATA_SET_SEQUENTIAL  — PS, FB, blksize=6160,  lrecl=80
+    };
+
+    private static readonly DS_TYPE_DSORG: Record<string, string> = {
+        BINARY: 'PO', C: 'PO', CLASSIC: 'PO', PARTITIONED: 'PO', SEQUENTIAL: 'PS',
+    };
+
     private async createDataset(
         session: any,
         intent: {
-            name: string; dsorg: 'PO' | 'PS';
-            recfm?: string; lrecl?: number; blksize?: number;
-            primary?: number; secondary?: number;
+            name: string;
+            dstype?: 'PARTITIONED' | 'SEQUENTIAL' | 'CLASSIC' | 'BINARY' | 'C';
+            likeDataset?: string;
+            lrecl?: number; blksize?: number; recfm?: string;
+            primary?: number; secondary?: number; dirblk?: number;
+            alcunit?: string; volser?: string;
+            storclass?: string; mgntclass?: string; dataclass?: string; dsntype?: string;
         },
         stream: vscode.ChatResponseStream
     ): Promise<ZosFollowup[]> {
-        const options: any = {
-            dsorg: intent.dsorg,
-            alcunit: 'TRK',
-            primary: intent.primary ?? 10,
-            secondary: intent.secondary ?? 5,
-            recfm: intent.recfm ?? 'FB',
-            lrecl: intent.lrecl ?? 80,
-            blksize: intent.blksize ?? 27920,
-        };
+        const cfg = vscode.workspace.getConfiguration('zosAssistant.createDefaults');
 
-        if (intent.dsorg === 'PO') {
-            options.dirblk = 20;
-            options.dsntype = 'PDS';
-        }
+        // Build override options common to both dataSet() and dataSetLike()
+        const options: Record<string, unknown> = {};
+        if (intent.alcunit   !== undefined) { options.alcunit   = intent.alcunit; }
+        if (intent.primary   !== undefined) { options.primary   = intent.primary; }
+        if (intent.secondary !== undefined) { options.secondary = intent.secondary; }
+        if (intent.recfm     !== undefined) { options.recfm     = intent.recfm; }
+        if (intent.lrecl     !== undefined) { options.lrecl     = intent.lrecl; }
+        if (intent.blksize   !== undefined) { options.blksize   = intent.blksize; }
+        if (intent.dirblk    !== undefined) { options.dirblk    = intent.dirblk; }
+        if (intent.volser    !== undefined) { options.volser    = intent.volser; }
+        if (intent.storclass !== undefined) { options.storclass = intent.storclass; }
+        if (intent.mgntclass !== undefined) { options.mgntclass = intent.mgntclass; }
+        if (intent.dataclass !== undefined) { options.dataclass = intent.dataclass; }
+        if (intent.dsntype   !== undefined) { options.dsntype   = intent.dsntype; }
 
-        await Create.dataSet(session, intent.dsorg === 'PO' ? 1 : 4, intent.name, options);
+        if (intent.likeDataset) {
+            // ── ALLOCATE LIKE ────────────────────────────────────────
+            stream.progress(`Creating \`${intent.name}\` like \`${intent.likeDataset}\`...`);
+            await Create.dataSetLike(session, intent.name, intent.likeDataset, options as any);
 
-        stream.markdown(
-            `✅ **Dataset créé** — \`${intent.name}\`\n\n` +
-            `| Propriété | Valeur |\n|-----------|--------|\n` +
-            `| Organisation | ${intent.dsorg} |\n` +
-            `| RECFM | ${options.recfm} |\n` +
-            `| LRECL | ${options.lrecl} |\n` +
-            `| BLKSIZE | ${options.blksize} |\n`
-        );
-
-        const suggestions: ZosFollowup[] = [
-            followup('ℹ️ Vérifier le dataset', `info sur ${intent.name}`, 'ds'),
-        ];
-
-        if (intent.dsorg === 'PO') {
-            suggestions.push(
-                followup('➕ Créer un membre', `crée un membre NEWPGM dans ${intent.name}`, 'ds')
+            stream.markdown(
+                `### ✅ Dataset created — \`${intent.name}\`\n\n` +
+                `| Attribute | Value |\n|-----------|-------|\n` +
+                `| Model | \`${intent.likeDataset}\` |\n` +
+                (Object.keys(options).length > 0
+                    ? Object.entries(options).map(([k, v]) => `| ${k.toUpperCase()} | ${v} |\n`).join('')
+                    : '')
             );
+        } else {
+            // ── TYPE PRESET ──────────────────────────────────────────
+            const dstype = intent.dstype ?? 'PARTITIONED';
+            const typeEnum = DatasetsHandler.DS_TYPE_ENUM[dstype] ?? 3;
+            const isPds = DatasetsHandler.DS_TYPE_DSORG[dstype] === 'PO';
+
+            // Apply settings defaults only when the intent did not specify the value
+            if (options.alcunit   === undefined) { options.alcunit   = cfg.get<string>('alcunit')  ?? 'TRK'; }
+            if (options.primary   === undefined) { options.primary   = cfg.get<number>('primary')  ?? 10; }
+            if (options.secondary === undefined) { options.secondary = cfg.get<number>('secondary') ?? 5; }
+
+            if (dstype !== 'BINARY' && dstype !== 'C') {
+                if (options.recfm   === undefined) { options.recfm  = cfg.get<string>('recfm') ?? 'FB'; }
+                if (options.lrecl   === undefined) { options.lrecl  = cfg.get<number>('lrecl') ?? 80; }
+                const cfgBlk = cfg.get<number>('blksize');
+                if (options.blksize === undefined && cfgBlk) { options.blksize = cfgBlk; }
+            }
+
+            if (isPds && options.dirblk === undefined) {
+                options.dirblk = cfg.get<number>('dirblkPds') ?? 20;
+            }
+
+            if (options.volser    === undefined) { const v = cfg.get<string>('volser');    if (v) { options.volser    = v; } }
+            if (options.storclass === undefined) { const v = cfg.get<string>('storclass'); if (v) { options.storclass = v; } }
+            if (options.mgntclass === undefined) { const v = cfg.get<string>('mgntclass'); if (v) { options.mgntclass = v; } }
+            if (options.dataclass === undefined) { const v = cfg.get<string>('dataclass'); if (v) { options.dataclass = v; } }
+
+            stream.progress(`Creating dataset \`${intent.name}\` (${dstype})...`);
+            await Create.dataSet(session, typeEnum, intent.name, options as any);
+
+            const dsorg = DatasetsHandler.DS_TYPE_DSORG[dstype];
+            stream.markdown(
+                `### ✅ Dataset created — \`${intent.name}\`\n\n` +
+                `| Attribute | Value |\n|-----------|-------|\n` +
+                `| Type | ${dstype} |\n` +
+                `| DSORG | ${dsorg} |\n` +
+                `| ALCUNIT | ${options.alcunit} |\n` +
+                `| PRIMARY | ${options.primary} |\n` +
+                `| SECONDARY | ${options.secondary} |\n` +
+                (options.recfm   ? `| RECFM | ${options.recfm} |\n`   : '') +
+                (options.lrecl   ? `| LRECL | ${options.lrecl} |\n`   : '') +
+                (options.blksize ? `| BLKSIZE | ${options.blksize} |\n` : '') +
+                (options.dirblk  ? `| DIRBLK | ${options.dirblk} |\n`  : '') +
+                (options.volser    ? `| VOLSER | ${options.volser} |\n`       : '') +
+                (options.storclass ? `| STORCLASS | ${options.storclass} |\n` : '') +
+                (options.mgntclass ? `| MGNTCLASS | ${options.mgntclass} |\n` : '') +
+                (options.dataclass ? `| DATACLASS | ${options.dataclass} |\n` : '')
+            );
+
+            const isPdsResult = DatasetsHandler.DS_TYPE_DSORG[dstype] === 'PO';
+            if (isPdsResult) {
+                return [
+                    followup('ℹ️ Dataset info', `info sur ${intent.name}`, 'ds'),
+                    followup('➕ Create a member', `crée un membre NEWPGM dans ${intent.name}`, 'ds'),
+                ];
+            }
         }
 
-        return suggestions;
+        return [ followup('ℹ️ Dataset info', `info sur ${intent.name}`, 'ds') ];
     }
 
     // ================================================================
@@ -416,11 +498,16 @@ export class DatasetsHandler {
         member: string,
         stream: vscode.ChatResponseStream
     ): Promise<ZosFollowup[]> {
+        stream.progress(`Deleting member \`${dataset}(${member})\`...`);
         await Delete.dataSet(session, `${dataset}(${member})`);
-        stream.markdown(`✅ **Membre supprimé** — \`${dataset}(${member})\``);
+
+        stream.markdown(
+            `### ✅ Member deleted — \`${dataset}(${member})\`\n\n` +
+            `> ⚠️ This operation is irreversible.`
+        );
 
         return [
-            followup('📄 Voir les membres restants', `montre les membres de ${dataset}`, 'ds'),
+            followup('📄 List remaining members', `montre les membres de ${dataset}`, 'ds'),
         ];
     }
 
@@ -430,15 +517,21 @@ export class DatasetsHandler {
     private async deleteDataset(
         session: any,
         dataset: string,
-        stream: vscode.ChatResponseStream
+        stream: vscode.ChatResponseStream,
+        volume?: string
     ): Promise<ZosFollowup[]> {
-        await Delete.dataSet(session, dataset);
-        stream.markdown(`✅ **Dataset supprimé** — \`${dataset}\``);
+        stream.progress(`Deleting \`${dataset}\`${volume ? ` (volume: ${volume})` : ''}...`);
+        await Delete.dataSet(session, dataset, volume ? { volume } : undefined);
 
-        // Pas grand-chose à proposer après une suppression
+        stream.markdown(
+            `### ✅ Dataset deleted — \`${dataset}\`\n\n` +
+            (volume ? `> Volume: \`${volume}\`\n\n` : '') +
+            `> ⚠️ This operation is irreversible.`
+        );
+
         const hlq = dataset.split('.').slice(0, -1).join('.');
         return [
-            followup('📁 Lister les datasets', `liste les datasets ${hlq}.**`, 'ds'),
+            followup('📁 List remaining datasets', `liste les datasets ${hlq}.**`, 'ds'),
         ];
     }
 
@@ -804,6 +897,109 @@ export class DatasetsHandler {
             followup('📄 Voir les membres uploadés', `montre les membres de ${dataset}`, 'ds'),
             followup('🔍 Chercher dans le PDS', `cherche IDENTIFICATION dans ${dataset}`, 'ds'),
         ];
+    }
+
+    // ================================================================
+    // COPY_MEMBER
+    // ================================================================
+    private async copyMember(
+        session: any,
+        fromDataset: string,
+        fromMember: string,
+        toDataset: string,
+        toMember: string,
+        stream: vscode.ChatResponseStream,
+        replace = false
+    ): Promise<ZosFollowup[]> {
+        stream.progress(`Copying \`${fromDataset}(${fromMember})\` → \`${toDataset}(${toMember})\`...`);
+
+        await Copy.dataSet(
+            session,
+            { dsn: toDataset, member: toMember },
+            { 'from-dataset': { dsn: fromDataset, member: fromMember }, replace }
+        );
+
+        stream.markdown(
+            `### ✅ Member copied\n\n` +
+            `| | Dataset | Member |\n|--|---------|--------|\n` +
+            `| **From** | \`${fromDataset}\` | \`${fromMember}\` |\n` +
+            `| **To**   | \`${toDataset}\` | \`${toMember}\` |\n`
+        );
+
+        return [
+            followup(`📝 Read ${toMember}`, `affiche ${toDataset}(${toMember})`, 'ds'),
+            followup('📄 List target members', `montre les membres de ${toDataset}`, 'ds'),
+        ];
+    }
+
+    // ================================================================
+    // COPY_DATASET
+    // ================================================================
+    private async copyDataset(
+        session: any,
+        fromDataset: string,
+        toDataset: string,
+        stream: vscode.ChatResponseStream,
+        replace = false
+    ): Promise<ZosFollowup[]> {
+        stream.progress(`Inspecting \`${fromDataset}\`...`);
+        const isPds = await Copy.isPDS(session, fromDataset);
+
+        if (isPds) {
+            // PDS: copy member by member; `replace` overwrites existing members in target
+            const membersResp = await List.allMembers(session, fromDataset);
+            const members: { member: string }[] = membersResp.apiResponse?.items ?? [];
+
+            stream.progress(`Copying ${members.length} member(s) from \`${fromDataset}\` to \`${toDataset}\`...`);
+            let copied = 0;
+            const errors: string[] = [];
+
+            for (const { member } of members) {
+                try {
+                    await Copy.dataSet(
+                        session,
+                        { dsn: toDataset, member },
+                        { 'from-dataset': { dsn: fromDataset, member }, replace }
+                    );
+                    copied++;
+                } catch (err: any) {
+                    errors.push(`${member}: ${err?.message ?? 'error'}`);
+                }
+            }
+
+            stream.markdown(
+                `### ✅ PDS copied — \`${fromDataset}\` → \`${toDataset}\`\n\n` +
+                `**${copied} / ${members.length}** member(s) copied successfully.\n` +
+                (errors.length > 0
+                    ? `\n⚠️ **${errors.length} error(s):**\n${errors.slice(0, 5).map(e => `- ${e}`).join('\n')}\n`
+                    : '')
+            );
+
+            return [
+                followup('📄 List target members', `montre les membres de ${toDataset}`, 'ds'),
+                followup('ℹ️ Target dataset info', `info sur ${toDataset}`, 'ds'),
+            ];
+        } else {
+            // Sequential dataset: `overwrite` deletes the target before recreating+copying
+            stream.progress(`Copying sequential dataset \`${fromDataset}\` → \`${toDataset}\`...`);
+
+            await Copy.dataSet(
+                session,
+                { dsn: toDataset },
+                { 'from-dataset': { dsn: fromDataset }, overwrite: replace }
+            );
+
+            stream.markdown(
+                `### ✅ Dataset copied\n\n` +
+                `| | Dataset |\n|--|--------|\n` +
+                `| **From** | \`${fromDataset}\` |\n` +
+                `| **To**   | \`${toDataset}\` |\n`
+            );
+
+            return [
+                followup('ℹ️ Target dataset info', `info sur ${toDataset}`, 'ds'),
+            ];
+        }
     }
 
     private resolveLocalPath(localPath: string): string {
