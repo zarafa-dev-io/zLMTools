@@ -1,6 +1,7 @@
 # Sources — esbuild bundles everything into dist/
 src/**
 out/**
+downloads/**
 
 # Dev tooling
 .vscode/**

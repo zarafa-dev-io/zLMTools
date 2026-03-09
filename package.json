@@ -2,7 +2,7 @@
     "name": "zos-copilot-assistant",
     "displayName": "z/OS Assistant for Copilot",
     "description": "Interact with z/OS mainframes directly from GitHub Copilot Chat — manage datasets, jobs, JCL submission via Zowe SDK.",
-    "version": "0.3.0",
+    "version": "0.5.0",
     "publisher": "zarafa-dev-io",
     "license": "MIT",
     "icon": "assets/icon.png",
@@ -318,6 +318,102 @@
                 }
             },
             {
+                "name": "zos_copyMember",
+                "toolReferenceName": "zos_copyMember",
+                "displayName": "z/OS: Copy Member",
+                "modelDescription": "Copy a PDS member to another dataset or member name on z/OS. Can be used to rename a member within the same PDS or duplicate it to another PDS.",
+                "canBeReferencedInPrompt": true,
+                "icon": "$(copy)",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "fromDataset": { "type": "string", "description": "Source PDS dataset name" },
+                        "fromMember":  { "type": "string", "description": "Source member name" },
+                        "toDataset":   { "type": "string", "description": "Target PDS dataset name" },
+                        "toMember":    { "type": "string", "description": "Target member name" },
+                        "replace":     { "type": "boolean", "description": "Overwrite target if it already exists (default false)" }
+                    },
+                    "required": ["fromDataset", "fromMember", "toDataset", "toMember"]
+                }
+            },
+            {
+                "name": "zos_copyDataset",
+                "toolReferenceName": "zos_copyDataset",
+                "displayName": "z/OS: Copy Dataset",
+                "modelDescription": "Copy an entire z/OS dataset to another dataset. For PDS, copies all members one by one. For sequential datasets, performs a single copy call.",
+                "canBeReferencedInPrompt": true,
+                "icon": "$(copy)",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "fromDataset": { "type": "string", "description": "Source dataset name (PDS or sequential)" },
+                        "toDataset":   { "type": "string", "description": "Target dataset name (must already exist)" },
+                        "replace":     { "type": "boolean", "description": "Overwrite existing members/content in target (default false)" }
+                    },
+                    "required": ["fromDataset", "toDataset"]
+                }
+            },
+            {
+                "name": "zos_createDataset",
+                "toolReferenceName": "zos_createDataset",
+                "displayName": "z/OS: Create Dataset",
+                "modelDescription": "Create a new z/OS dataset. Two modes: (1) type preset — use dstype (PARTITIONED, SEQUENTIAL, CLASSIC, BINARY, C) with optional attribute overrides; (2) allocate like — use likeDataset to copy attributes from an existing dataset. Attribute defaults from VS Code settings (zosAssistant.createDefaults.*). dstype and likeDataset are mutually exclusive.",
+                "canBeReferencedInPrompt": true,
+                "icon": "$(database)",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "name":        { "type": "string", "description": "Fully qualified dataset name to create (e.g. HLQ.COBOL.SRC)" },
+                        "dstype":      { "type": "string", "enum": ["PARTITIONED", "SEQUENTIAL", "CLASSIC", "BINARY", "C"], "description": "Dataset type preset. Mutually exclusive with likeDataset." },
+                        "likeDataset": { "type": "string", "description": "Allocate like an existing dataset — copies all its attributes. Mutually exclusive with dstype." },
+                        "lrecl":     { "type": "number", "description": "Logical record length (overrides setting default)" },
+                        "blksize":   { "type": "number", "description": "Block size (overrides setting default; 0 = z/OS-determined)" },
+                        "recfm":     { "type": "string", "description": "Record format: FB, VB, F, V, U, FBA, VBA (PARTITIONED/SEQUENTIAL only; overrides setting default)" },
+                        "primary":   { "type": "number", "description": "Primary space allocation (overrides setting default)" },
+                        "secondary": { "type": "number", "description": "Secondary space allocation (overrides setting default)" },
+                        "dirblk":    { "type": "number", "description": "Directory blocks for PDS (overrides setting default)" },
+                        "alcunit":   { "type": "string", "enum": ["TRK", "CYL"], "description": "Space allocation unit: TRK or CYL (overrides setting default)" },
+                        "volser":    { "type": "string", "description": "Volume serial (overrides setting default; empty = SMS-managed)" },
+                        "storclass": { "type": "string", "description": "SMS storage class (overrides setting default)" },
+                        "mgntclass": { "type": "string", "description": "SMS management class (overrides setting default)" },
+                        "dataclass": { "type": "string", "description": "SMS data class (overrides setting default)" }
+                    },
+                    "required": ["name"]
+                }
+            },
+            {
+                "name": "zos_deleteMember",
+                "toolReferenceName": "zos_deleteMember",
+                "displayName": "z/OS: Delete PDS Member",
+                "modelDescription": "Permanently delete a member from a z/OS PDS dataset. This operation is irreversible — always confirm with the user before invoking.",
+                "canBeReferencedInPrompt": true,
+                "icon": "$(trash)",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "dataset": { "type": "string", "description": "Fully qualified PDS dataset name (e.g. HLQ.COBOL.SRC)" },
+                        "member":  { "type": "string", "description": "Member name to delete (e.g. PGMA)" }
+                    },
+                    "required": ["dataset", "member"]
+                }
+            },
+            {
+                "name": "zos_deleteDataset",
+                "toolReferenceName": "zos_deleteDataset",
+                "displayName": "z/OS: Delete Dataset",
+                "modelDescription": "Permanently delete an entire z/OS dataset (PDS or sequential). This operation is irreversible — always confirm with the user before invoking. For non-SMS datasets provide the volume serial.",
+                "canBeReferencedInPrompt": true,
+                "icon": "$(trash)",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "dataset": { "type": "string", "description": "Fully qualified dataset name to delete" },
+                        "volume":  { "type": "string", "description": "Volume serial where the dataset resides (required for non-SMS-managed datasets)" }
+                    },
+                    "required": ["dataset"]
+                }
+            },
+            {
                 "name": "zos_downloadMember",
                 "toolReferenceName": "zos_downloadMember",
                 "displayName": "z/OS: Download Member",
@@ -477,6 +573,63 @@
                     "type": "boolean",
                     "default": true,
                     "description": "Enable local usage telemetry (data stays on your machine)"
+                },
+                "zosAssistant.createDefaults.alcunit": {
+                    "type": "string",
+                    "enum": ["TRK", "CYL"],
+                    "default": "TRK",
+                    "description": "Default space allocation unit for dataset creation (TRK = tracks, CYL = cylinders)"
+                },
+                "zosAssistant.createDefaults.primary": {
+                    "type": "number",
+                    "default": 10,
+                    "description": "Default primary space allocation for dataset creation"
+                },
+                "zosAssistant.createDefaults.secondary": {
+                    "type": "number",
+                    "default": 5,
+                    "description": "Default secondary space allocation for dataset creation"
+                },
+                "zosAssistant.createDefaults.recfm": {
+                    "type": "string",
+                    "enum": ["FB", "VB", "F", "V", "U", "FBA", "VBA"],
+                    "default": "FB",
+                    "description": "Default record format for dataset creation (PARTITIONED and SEQUENTIAL types only)"
+                },
+                "zosAssistant.createDefaults.lrecl": {
+                    "type": "number",
+                    "default": 80,
+                    "description": "Default logical record length for dataset creation"
+                },
+                "zosAssistant.createDefaults.blksize": {
+                    "type": "number",
+                    "default": 0,
+                    "description": "Default block size for dataset creation (0 = let z/OS determine)"
+                },
+                "zosAssistant.createDefaults.dirblkPds": {
+                    "type": "number",
+                    "default": 20,
+                    "description": "Default number of directory blocks for PDS dataset creation"
+                },
+                "zosAssistant.createDefaults.volser": {
+                    "type": "string",
+                    "default": "",
+                    "description": "Default volume serial for dataset creation (empty = SMS-managed)"
+                },
+                "zosAssistant.createDefaults.storclass": {
+                    "type": "string",
+                    "default": "",
+                    "description": "Default SMS storage class for dataset creation"
+                },
+                "zosAssistant.createDefaults.mgntclass": {
+                    "type": "string",
+                    "default": "",
+                    "description": "Default SMS management class for dataset creation"
+                },
+                "zosAssistant.createDefaults.dataclass": {
+                    "type": "string",
+                    "default": "",
+                    "description": "Default SMS data class for dataset creation"
                 }
             }
         }

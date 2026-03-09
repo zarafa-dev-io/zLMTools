@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
-import { List, Download, Upload } from '@zowe/zos-files-for-zowe-sdk';
+import { List, Download, Upload, Copy, Create, Delete } from '@zowe/zos-files-for-zowe-sdk';
 import { GetJobs, SubmitJobs } from '@zowe/zos-jobs-for-zowe-sdk';
 import { ZoweSessionManager } from '../zowe/session';
 import { isProtectedDataset } from '../zowe/safety';
@@ -474,6 +474,253 @@ export function registerTools(
                             uploadedFiles: files.length,
                             members: files.map(f => path.basename(f, path.extname(f)).toUpperCase().slice(0, 8)),
                         }, null, 2)
+                    )
+                ]);
+            }
+        })
+    );
+
+    // COPY MEMBER
+    context.subscriptions.push(
+        vscode.lm.registerTool('zos_copyMember', {
+            async invoke(
+                options: vscode.LanguageModelToolInvocationOptions<{
+                    fromDataset: string;
+                    fromMember: string;
+                    toDataset: string;
+                    toMember: string;
+                    replace?: boolean;
+                }>,
+                _token: vscode.CancellationToken
+            ) {
+                const { session } = await sessionManager.getSession();
+                const { fromDataset, fromMember, toDataset, toMember, replace } = options.input;
+
+                await Copy.dataSet(
+                    session,
+                    { dsn: toDataset, member: toMember },
+                    { 'from-dataset': { dsn: fromDataset, member: fromMember }, replace: replace ?? false }
+                );
+
+                telemetry.trackSuccess('tool', 'zos_copyMember');
+
+                return new vscode.LanguageModelToolResult([
+                    new vscode.LanguageModelTextPart(
+                        JSON.stringify({
+                            status: 'success',
+                            from: `${fromDataset}(${fromMember})`,
+                            to: `${toDataset}(${toMember})`,
+                        }, null, 2)
+                    )
+                ]);
+            }
+        })
+    );
+
+    // COPY DATASET
+    context.subscriptions.push(
+        vscode.lm.registerTool('zos_copyDataset', {
+            async invoke(
+                options: vscode.LanguageModelToolInvocationOptions<{
+                    fromDataset: string;
+                    toDataset: string;
+                    replace?: boolean;
+                }>,
+                token: vscode.CancellationToken
+            ) {
+                const { session } = await sessionManager.getSession();
+                const { fromDataset, toDataset, replace } = options.input;
+
+                // Use isPDS() to distinguish PDS from sequential
+                const isPds = await Copy.isPDS(session, fromDataset);
+                let copied = 0;
+                const errors: string[] = [];
+                let totalMembers = 1;
+
+                if (isPds) {
+                    // PDS: copy member by member; `replace` overwrites existing members
+                    const membersResp = await List.allMembers(session, fromDataset);
+                    const members: { member: string }[] = membersResp.apiResponse?.items ?? [];
+                    totalMembers = members.length;
+
+                    for (const { member } of members) {
+                        if (token.isCancellationRequested) { break; }
+                        try {
+                            await Copy.dataSet(
+                                session,
+                                { dsn: toDataset, member },
+                                { 'from-dataset': { dsn: fromDataset, member }, replace: replace ?? false }
+                            );
+                            copied++;
+                        } catch (err: any) {
+                            errors.push(`${member}: ${err?.message ?? 'error'}`);
+                        }
+                    }
+                } else {
+                    // Sequential: `overwrite` deletes target before recreating+copying
+                    await Copy.dataSet(
+                        session,
+                        { dsn: toDataset },
+                        { 'from-dataset': { dsn: fromDataset }, overwrite: replace ?? false }
+                    );
+                    copied = 1;
+                }
+
+                telemetry.trackSuccess('tool', 'zos_copyDataset');
+
+                return new vscode.LanguageModelToolResult([
+                    new vscode.LanguageModelTextPart(
+                        JSON.stringify({
+                            status: errors.length === 0 ? 'success' : 'partial',
+                            fromDataset,
+                            toDataset,
+                            totalMembers,
+                            copied,
+                            errors,
+                        }, null, 2)
+                    )
+                ]);
+            }
+        })
+    );
+
+    // CREATE DATASET
+    context.subscriptions.push(
+        vscode.lm.registerTool('zos_createDataset', {
+            async invoke(
+                options: vscode.LanguageModelToolInvocationOptions<{
+                    name: string;
+                    dstype?: 'PARTITIONED' | 'SEQUENTIAL' | 'CLASSIC' | 'BINARY' | 'C';
+                    likeDataset?: string;
+                    lrecl?: number;
+                    blksize?: number;
+                    recfm?: string;
+                    primary?: number;
+                    secondary?: number;
+                    dirblk?: number;
+                    alcunit?: string;
+                    volser?: string;
+                    storclass?: string;
+                    mgntclass?: string;
+                    dataclass?: string;
+                }>,
+                _token: vscode.CancellationToken
+            ) {
+                const { session } = await sessionManager.getSession();
+                const { name, dstype, likeDataset, ...attrs } = options.input;
+
+                const DS_TYPE_ENUM: Record<string, number> = {
+                    BINARY: 0, C: 1, CLASSIC: 2, PARTITIONED: 3, SEQUENTIAL: 4,
+                };
+                const DS_TYPE_DSORG: Record<string, string> = {
+                    BINARY: 'PO', C: 'PO', CLASSIC: 'PO', PARTITIONED: 'PO', SEQUENTIAL: 'PS',
+                };
+
+                const cfg = vscode.workspace.getConfiguration('zosAssistant.createDefaults');
+
+                // Collect intent-provided overrides first
+                const opts: Record<string, unknown> = {};
+                if (attrs.alcunit   !== undefined) { opts.alcunit   = attrs.alcunit; }
+                if (attrs.primary   !== undefined) { opts.primary   = attrs.primary; }
+                if (attrs.secondary !== undefined) { opts.secondary = attrs.secondary; }
+                if (attrs.recfm     !== undefined) { opts.recfm     = attrs.recfm; }
+                if (attrs.lrecl     !== undefined) { opts.lrecl     = attrs.lrecl; }
+                if (attrs.blksize   !== undefined) { opts.blksize   = attrs.blksize; }
+                if (attrs.dirblk    !== undefined) { opts.dirblk    = attrs.dirblk; }
+                if (attrs.volser    !== undefined) { opts.volser    = attrs.volser; }
+                if (attrs.storclass !== undefined) { opts.storclass = attrs.storclass; }
+                if (attrs.mgntclass !== undefined) { opts.mgntclass = attrs.mgntclass; }
+                if (attrs.dataclass !== undefined) { opts.dataclass = attrs.dataclass; }
+
+                let resultMeta: Record<string, unknown>;
+
+                if (likeDataset) {
+                    // ── ALLOCATE LIKE ────────────────────────────────────────
+                    await Create.dataSetLike(session, name, likeDataset, opts as any);
+                    resultMeta = { dataset: name, likeDataset, overrides: opts };
+                } else {
+                    // ── TYPE PRESET ──────────────────────────────────────────
+                    const resolvedType = dstype ?? 'PARTITIONED';
+                    const typeEnum = DS_TYPE_ENUM[resolvedType] ?? 3;
+                    const isPds = DS_TYPE_DSORG[resolvedType] === 'PO';
+
+                    if (opts.alcunit   === undefined) { opts.alcunit   = cfg.get<string>('alcunit')  ?? 'TRK'; }
+                    if (opts.primary   === undefined) { opts.primary   = cfg.get<number>('primary')  ?? 10; }
+                    if (opts.secondary === undefined) { opts.secondary = cfg.get<number>('secondary') ?? 5; }
+
+                    if (resolvedType !== 'BINARY' && resolvedType !== 'C') {
+                        if (opts.recfm  === undefined) { opts.recfm  = cfg.get<string>('recfm') ?? 'FB'; }
+                        if (opts.lrecl  === undefined) { opts.lrecl  = cfg.get<number>('lrecl') ?? 80; }
+                        const cfgBlk = cfg.get<number>('blksize');
+                        if (opts.blksize === undefined && cfgBlk) { opts.blksize = cfgBlk; }
+                    }
+                    if (isPds && opts.dirblk === undefined) { opts.dirblk = cfg.get<number>('dirblkPds') ?? 20; }
+                    if (opts.volser    === undefined) { const v = cfg.get<string>('volser');    if (v) { opts.volser    = v; } }
+                    if (opts.storclass === undefined) { const v = cfg.get<string>('storclass'); if (v) { opts.storclass = v; } }
+                    if (opts.mgntclass === undefined) { const v = cfg.get<string>('mgntclass'); if (v) { opts.mgntclass = v; } }
+                    if (opts.dataclass === undefined) { const v = cfg.get<string>('dataclass'); if (v) { opts.dataclass = v; } }
+
+                    await Create.dataSet(session, typeEnum, name, opts as any);
+                    resultMeta = { dataset: name, dstype: resolvedType, dsorg: DS_TYPE_DSORG[resolvedType], attributes: opts };
+                }
+
+                telemetry.trackSuccess('tool', 'zos_createDataset');
+
+                return new vscode.LanguageModelToolResult([
+                    new vscode.LanguageModelTextPart(
+                        JSON.stringify({ status: 'success', ...resultMeta }, null, 2)
+                    )
+                ]);
+            }
+        })
+    );
+
+    // DELETE MEMBER
+    context.subscriptions.push(
+        vscode.lm.registerTool('zos_deleteMember', {
+            async invoke(
+                options: vscode.LanguageModelToolInvocationOptions<{
+                    dataset: string;
+                    member: string;
+                }>,
+                _token: vscode.CancellationToken
+            ) {
+                const { session } = await sessionManager.getSession();
+                const { dataset, member } = options.input;
+
+                await Delete.dataSet(session, `${dataset}(${member})`);
+
+                telemetry.trackSuccess('tool', 'zos_deleteMember');
+
+                return new vscode.LanguageModelToolResult([
+                    new vscode.LanguageModelTextPart(
+                        JSON.stringify({ status: 'success', deleted: `${dataset}(${member})` }, null, 2)
+                    )
+                ]);
+            }
+        })
+    );
+
+    // DELETE DATASET
+    context.subscriptions.push(
+        vscode.lm.registerTool('zos_deleteDataset', {
+            async invoke(
+                options: vscode.LanguageModelToolInvocationOptions<{
+                    dataset: string;
+                    volume?: string;
+                }>,
+                _token: vscode.CancellationToken
+            ) {
+                const { session } = await sessionManager.getSession();
+                const { dataset, volume } = options.input;
+
+                await Delete.dataSet(session, dataset, volume ? { volume } : undefined);
+
+                telemetry.trackSuccess('tool', 'zos_deleteDataset');
+
+                return new vscode.LanguageModelToolResult([
+                    new vscode.LanguageModelTextPart(
+                        JSON.stringify({ status: 'success', deleted: dataset, volume }, null, 2)
                     )
                 ]);
             }

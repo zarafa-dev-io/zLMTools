@@ -25,7 +25,7 @@ en UNE SEULE opération sur les datasets z/OS et extraire les paramètres néces
 | LIST_MEMBERS | Lister les membres d'un PDS | dataset (string), pattern? (string) |
 | READ_MEMBER | Lire le contenu d'un membre | dataset (string), member (string) |
 | WRITE_MEMBER | Écrire/modifier le contenu d'un membre | dataset (string), member (string), content (string) |
-| CREATE_DATASET | Créer un nouveau dataset | name, dsorg (PO|PS), recfm?, lrecl?, blksize? |
+| CREATE_DATASET | Créer un nouveau dataset | name, dstype? (PARTITIONED\|SEQUENTIAL\|CLASSIC\|BINARY\|C), likeDataset? (allouer comme un dataset existant), lrecl?, blksize?, recfm?, primary?, secondary?, dirblk?, alcunit?, volser?, storclass?, mgntclass?, dataclass? |
 | CREATE_MEMBER | Créer un nouveau membre dans un PDS | dataset (string), member (string), content? (string) |
 | DELETE_MEMBER | Supprimer un membre | dataset (string), member (string) |
 | DELETE_DATASET | Supprimer un dataset entier | dataset (string) |
@@ -36,6 +36,8 @@ en UNE SEULE opération sur les datasets z/OS et extraire les paramètres néces
 | DOWNLOAD_ALL_DATASETS | Télécharger tous les datasets correspondant à un pattern | pattern (string), targetDir? (string) |
 | UPLOAD_FILE_TO_MEMBER | Uploader un fichier local vers un membre PDS | localPath (string), dataset (string), member (string) |
 | UPLOAD_DIR_TO_PDS | Uploader un répertoire local vers un PDS (chaque fichier devient un membre) | localPath (string), dataset (string) |
+| COPY_MEMBER | Copier un membre PDS vers un autre dataset/membre | fromDataset, fromMember, toDataset, toMember, replace? (bool) |
+| COPY_DATASET | Copier un dataset entier (séquentiel ou PDS) vers un autre dataset | fromDataset, toDataset, replace? (bool) |
 
 ## Exemples
 
@@ -61,7 +63,25 @@ Requête: "cherche PERFORM dans HLQ.COBOL.SRC"
 → { "type": "SEARCH_CONTENT", "dataset": "HLQ.COBOL.SRC", "searchTerm": "PERFORM" }
 
 Requête: "crée un PDS HLQ.NEW.SRC avec LRECL 80"
-→ { "type": "CREATE_DATASET", "name": "HLQ.NEW.SRC", "dsorg": "PO", "lrecl": 80 }
+→ { "type": "CREATE_DATASET", "name": "HLQ.NEW.SRC", "dstype": "PARTITIONED", "lrecl": 80 }
+
+Requête: "crée un dataset séquentiel HLQ.WORK.DATA RECFM=VB LRECL=256"
+→ { "type": "CREATE_DATASET", "name": "HLQ.WORK.DATA", "dstype": "SEQUENTIAL", "recfm": "VB", "lrecl": 256 }
+
+Requête: "crée un PDS classic HLQ.COBOL.SRC primary 5 CYL"
+→ { "type": "CREATE_DATASET", "name": "HLQ.COBOL.SRC", "dstype": "CLASSIC", "primary": 5, "alcunit": "CYL" }
+
+Requête: "crée un dataset binaire HLQ.LOAD.LIB"
+→ { "type": "CREATE_DATASET", "name": "HLQ.LOAD.LIB", "dstype": "BINARY" }
+
+Requête: "crée un dataset C HLQ.C.SRC sur le volume VOL001 storclass STORCLS1"
+→ { "type": "CREATE_DATASET", "name": "HLQ.C.SRC", "dstype": "C", "volser": "VOL001", "storclass": "STORCLS1" }
+
+Requête: "crée HLQ.NEW.SRC comme HLQ.COBOL.SRC"
+→ { "type": "CREATE_DATASET", "name": "HLQ.NEW.SRC", "likeDataset": "HLQ.COBOL.SRC" }
+
+Requête: "alloue HLQ.WORK.DATA sur le modèle de HLQ.REF.DATA avec primary 20"
+→ { "type": "CREATE_DATASET", "name": "HLQ.WORK.DATA", "likeDataset": "HLQ.REF.DATA", "primary": 20 }
 
 Requête: "télécharge le membre PGMA de HLQ.COBOL.SRC"
 → { "type": "DOWNLOAD_MEMBER", "dataset": "HLQ.COBOL.SRC", "member": "PGMA" }
@@ -80,6 +100,27 @@ Requête: "envoie le répertoire ./cobol vers HLQ.COBOL.SRC"
 
 Requête: "pousse C:/code/jcl vers HLQ.JCL.CNTL"
 → { "type": "UPLOAD_DIR_TO_PDS", "localPath": "C:/code/jcl", "dataset": "HLQ.JCL.CNTL" }
+
+Requête: "copie le membre PGMA de HLQ.COBOL.SRC vers HLQ.COBOL.BAK(PGMA)"
+→ { "type": "COPY_MEMBER", "fromDataset": "HLQ.COBOL.SRC", "fromMember": "PGMA", "toDataset": "HLQ.COBOL.BAK", "toMember": "PGMA" }
+
+Requête: "copie PGMA de HLQ.SRC en PGMB dans HLQ.SRC"
+→ { "type": "COPY_MEMBER", "fromDataset": "HLQ.SRC", "fromMember": "PGMA", "toDataset": "HLQ.SRC", "toMember": "PGMB" }
+
+Requête: "copie le dataset HLQ.COBOL.SRC vers HLQ.COBOL.BAK"
+→ { "type": "COPY_DATASET", "fromDataset": "HLQ.COBOL.SRC", "toDataset": "HLQ.COBOL.BAK" }
+
+## Règles pour CREATE_DATASET
+- Si l'utilisateur dit "comme", "like", "sur le modèle de", "à l'image de" suivi d'un nom de dataset → utiliser **likeDataset** (et ne pas mettre dstype)
+- Si l'utilisateur précise un type (PDS, séquentiel, etc.) sans "like" → utiliser **dstype** (sans likeDataset)
+- **likeDataset** et **dstype** sont mutuellement exclusifs : ne jamais mettre les deux
+
+## Types de dataset pour CREATE_DATASET
+- **PARTITIONED** : PDS standard (PO, FB, lrecl=80) — quand l'utilisateur dit "PDS", "partitioned", "bibliothèque"
+- **SEQUENTIAL** : fichier plat (PS, FB, lrecl=80) — quand l'utilisateur dit "séquentiel", "PS", "fichier plat"
+- **CLASSIC** : PDS avec 25 dirblks (style classique) — quand l'utilisateur dit "classic", "bibliothèque classique"
+- **BINARY** : PDS binaire (U, blksize=27998) — quand l'utilisateur dit "binaire", "load library", "LIB"
+- **C** : PDS pour code C (VB, lrecl=260) — quand l'utilisateur dit "C dataset", "source C"
 
 ## Instructions
 - Réponds UNIQUEMENT avec un objet JSON valide, sans markdown, sans explication

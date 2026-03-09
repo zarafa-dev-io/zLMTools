@@ -18,7 +18,9 @@ export type DsIntent =
     | DownloadAllMembersIntent
     | DownloadAllDatasetsIntent
     | UploadFileToMemberIntent
-    | UploadDirToPdsIntent;
+    | UploadDirToPdsIntent
+    | CopyMemberIntent
+    | CopyDatasetIntent;
 
 export interface ListDatasetsIntent {
     type: 'LIST_DATASETS';
@@ -47,12 +49,28 @@ export interface WriteMemberIntent {
 export interface CreateDatasetIntent {
     type: 'CREATE_DATASET';
     name: string;
-    dsorg: 'PO' | 'PS'; // PDS ou séquentiel
-    recfm?: string;
+    // Dataset type — maps to Zowe SDK CreateDataSetTypeEnum
+    // PARTITIONED = standard PDS (PO, FB/80, 5 dirblks)
+    // SEQUENTIAL  = flat file (PS, FB/80)
+    // CLASSIC     = PDS with 25 dirblks (legacy style)
+    // BINARY      = binary PDS (U, blksize=27998)
+    // C           = C-language PDS (VB, lrecl=260)
+    dstype?: 'PARTITIONED' | 'SEQUENTIAL' | 'CLASSIC' | 'BINARY' | 'C';
+    // Allocate like an existing dataset (uses Create.dataSetLike)
+    likeDataset?: string;
+    // Attribute overrides — defaults come from VS Code settings
     lrecl?: number;
     blksize?: number;
+    recfm?: string;
     primary?: number;
     secondary?: number;
+    dirblk?: number;
+    alcunit?: 'TRK' | 'CYL';
+    volser?: string;
+    storclass?: string;
+    mgntclass?: string;
+    dataclass?: string;
+    dsntype?: string;
 }
 
 export interface CreateMemberIntent {
@@ -71,6 +89,7 @@ export interface DeleteMemberIntent {
 export interface DeleteDatasetIntent {
     type: 'DELETE_DATASET';
     dataset: string;
+    volume?: string; // required when dataset is not SMS-managed
 }
 
 export interface SearchContentIntent {
@@ -117,6 +136,22 @@ export interface UploadDirToPdsIntent {
     dataset: string;   // PDS cible
 }
 
+export interface CopyMemberIntent {
+    type: 'COPY_MEMBER';
+    fromDataset: string;
+    fromMember: string;
+    toDataset: string;
+    toMember: string;   // peut être identique ou différent
+    replace?: boolean;
+}
+
+export interface CopyDatasetIntent {
+    type: 'COPY_DATASET';
+    fromDataset: string;
+    toDataset: string;
+    replace?: boolean;
+}
+
 // ============================================================
 // Safety levels — contrôle les confirmations requises
 // ============================================================
@@ -134,6 +169,8 @@ export const INTENT_SAFETY: Record<DsIntent['type'], SafetyLevel> = {
     DOWNLOAD_ALL_DATASETS: 'safe',
     UPLOAD_FILE_TO_MEMBER: 'moderate',
     UPLOAD_DIR_TO_PDS: 'moderate',
+    COPY_MEMBER: 'moderate',
+    COPY_DATASET: 'moderate',
     CREATE_MEMBER: 'moderate',
     WRITE_MEMBER: 'moderate',
     CREATE_DATASET: 'moderate',

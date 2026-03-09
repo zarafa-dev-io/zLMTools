@@ -45,9 +45,18 @@ Browse, read, write, search and manage z/OS datasets and PDS members.
 @zos /ds download all datasets HLQ.COBOL.**
 @zos /ds upload PGMA.cbl to HLQ.COBOL.SRC(PGMA)
 @zos /ds upload directory ./cobol to HLQ.COBOL.SRC
+@zos /ds copy member PGMA from HLQ.COBOL.SRC to HLQ.COBOL.BAK(PGMA)
+@zos /ds copy dataset HLQ.COBOL.SRC to HLQ.COBOL.BAK
+@zos /ds create PDS HLQ.NEW.SRC lrecl 80
+@zos /ds create sequential dataset HLQ.WORK.DATA recfm VB lrecl 256
+@zos /ds create classic PDS HLQ.COBOL.SRC primary 5 CYL
+@zos /ds create binary library HLQ.LOAD.LIB
+@zos /ds create HLQ.NEW.SRC like HLQ.COBOL.SRC
+@zos /ds delete member OLDPGM from HLQ.COBOL.SRC
+@zos /ds delete dataset HLQ.WORK.DATA
 ```
 
-**15 operations:** list, read, write, create, delete, search, info, download, upload — with auto-detected syntax highlighting for COBOL, JCL, and ASM.
+**17 operations:** list, read, write, create, delete, search, info, download, upload, copy — with auto-detected syntax highlighting for COBOL, JCL, and ASM. Dataset creation supports 5 preset types (PARTITIONED, SEQUENTIAL, CLASSIC, BINARY, C) with configurable site defaults via settings.
 
 ---
 
@@ -120,6 +129,22 @@ Open **Settings** (`Ctrl+,`) and search for `z/OS Assistant`:
 | `zosAssistant.maxSpoolLines` | `200` | Spool lines displayed inline before truncation |
 | `zosAssistant.telemetryEnabled` | `true` | Local usage tracking (data stays on your machine) |
 
+**Dataset creation defaults** (`zosAssistant.createDefaults.*`):
+
+| Setting | Default | Description |
+|---|---|---|
+| `alcunit` | `TRK` | Space allocation unit (TRK or CYL) |
+| `primary` | `10` | Primary space |
+| `secondary` | `5` | Secondary space |
+| `recfm` | `FB` | Record format (for PARTITIONED / SEQUENTIAL types) |
+| `lrecl` | `80` | Logical record length |
+| `blksize` | `0` | Block size (0 = z/OS-determined) |
+| `dirblkPds` | `20` | Directory blocks for PDS |
+| `volser` | `""` | Volume serial (empty = SMS-managed) |
+| `storclass` | `""` | SMS storage class |
+| `mgntclass` | `""` | SMS management class |
+| `dataclass` | `""` | SMS data class |
+
 ---
 
 ## Commands
@@ -147,6 +172,11 @@ In addition to chat commands, z/OS Assistant exposes the following tools that Co
 - **`#zos_downloadAllDatasets`** — Download all datasets matching a pattern
 - **`#zos_uploadFileToPds`** — Upload a local file to a PDS member
 - **`#zos_uploadDirToPds`** — Upload a local directory to a PDS (each file becomes a member)
+- **`#zos_copyMember`** — Copy a PDS member to another dataset (with optional rename and replace)
+- **`#zos_copyDataset`** — Copy an entire PDS or sequential dataset to a new target
+- **`#zos_createDataset`** — Create a z/OS dataset (PARTITIONED, SEQUENTIAL, CLASSIC, BINARY, C) with full attribute control
+- **`#zos_deleteMember`** — Permanently delete a PDS member
+- **`#zos_deleteDataset`** — Permanently delete an entire dataset (with optional volume for non-SMS)
 - **`#zos_listJobs`** — List jobs by owner, prefix, or status
 - **`#zos_getJobStatus`** — Get detailed job status and return code
 - **`#zos_getJobOutput`** — Retrieve spool output (SYSPRINT, JESMSGLG…)

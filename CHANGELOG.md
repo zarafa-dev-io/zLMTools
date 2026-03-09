@@ -6,6 +6,75 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and
 
 ---
 
+## [0.5.0] - 2026-03-09
+
+### Changed
+
+#### `/ds` — Dataset creation reworked
+
+- `CREATE_DATASET` now supports five Zowe SDK preset types instead of a binary PO/PS choice:
+  - **PARTITIONED** — standard PDS (PO, FB/80, 5 dirblks) — keyword: "PDS", "partitioned", "bibliothèque"
+  - **SEQUENTIAL** — flat file (PS, FB/80) — keyword: "séquentiel", "PS", "fichier plat"
+  - **CLASSIC** — PDS with 25 dirblks (legacy style) — keyword: "classic"
+  - **BINARY** — binary PDS (U, blksize=27998) — keyword: "binaire", "load library", "LIB"
+  - **C** — C-language PDS (VB, lrecl=260, dirblk=25) — keyword: "C dataset"
+- New `likeDataset` mode: `Create.dataSetLike()` copies all attributes from an existing dataset; additional overrides (e.g. `primary`) can still be specified
+- Attribute priority (type preset mode): intent-specified values > VS Code settings defaults > Zowe SDK preset defaults
+- Fixed: PDS type was previously mapped to `DATA_SET_C` (enum 1) instead of `DATA_SET_PARTITIONED` (enum 3)
+- Output table now shows all effective attributes including SMS classes and volume
+
+### Added
+
+#### `/ds` — Delete member and dataset
+
+- `DELETE_MEMBER` — Delete a PDS member via `Delete.dataSet(session, "DATASET(MEMBER)")`
+- `DELETE_DATASET` — Delete an entire dataset via `Delete.dataSet()`; accepts optional `volume` parameter for non-SMS-managed datasets
+
+#### Language Model Tools
+
+- `#zos_createDataset` — Create a z/OS dataset; two modes: type preset (PARTITIONED/SEQUENTIAL/CLASSIC/BINARY/C) or allocate-like an existing dataset (`likeDataset`); per-call attribute overrides; defaults from VS Code settings
+- `#zos_deleteMember` — Permanently delete a PDS member (irreversible)
+- `#zos_deleteDataset` — Permanently delete an entire dataset, with optional `volume` for non-SMS datasets (irreversible)
+
+#### Settings — Dataset creation defaults (`zosAssistant.createDefaults.*`)
+
+New settings group to configure site-wide defaults used for every `CREATE_DATASET` operation:
+
+| Setting | Default | Description |
+|---|---|---|
+| `alcunit` | `TRK` | Space allocation unit (TRK or CYL) |
+| `primary` | `10` | Primary space allocation |
+| `secondary` | `5` | Secondary space allocation |
+| `recfm` | `FB` | Record format (PARTITIONED and SEQUENTIAL types only) |
+| `lrecl` | `80` | Logical record length |
+| `blksize` | `0` | Block size (0 = let z/OS determine) |
+| `dirblkPds` | `20` | Directory blocks for PDS |
+| `volser` | `""` | Volume serial (empty = SMS-managed) |
+| `storclass` | `""` | SMS storage class |
+| `mgntclass` | `""` | SMS management class |
+| `dataclass` | `""` | SMS data class |
+
+---
+
+## [0.4.0] - 2026-03-06
+
+### Added
+
+#### `/ds` — Copy members and datasets
+
+- `COPY_MEMBER` — Copy a PDS member to another dataset/member via `Copy.dataSet()`; supports renaming (source member ≠ target member) and `replace` flag
+- `COPY_DATASET` — Copy an entire PDS or sequential dataset:
+  - **PDS**: iterates over all members and copies each one individually using `Copy.dataSet()`
+  - **Sequential**: single `Copy.dataSet()` call without member names
+  - Detailed progress with per-member error reporting
+
+#### Language Model Tools
+
+- `#zos_copyMember` — Copy a PDS member to another dataset (with optional rename and replace)
+- `#zos_copyDataset` — Copy an entire PDS or sequential dataset to a new target
+
+---
+
 ## [0.3.0] - 2026-03-06
 
 ### Added
