@@ -6,6 +6,28 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and
 
 ---
 
+## [0.6.5] - 2026-03-10
+
+### Changed
+
+#### `/ds` — Création de datasets partitionnés en PDSE par défaut
+
+- Les datasets partitionnels (types PARTITIONED, CLASSIC, BINARY, C) sont désormais créés en **PDSE** (`DSNTYPE=LIBRARY`) par défaut au lieu de PDS classiques
+- Avantages : répertoire dynamique (pas de compression manuelle), partage concurrent, support de ~125 000 membres
+- La valeur par défaut est configurable via le nouveau setting `zosAssistant.createDefaults.dsntype`
+- L'utilisateur peut toujours forcer un PDS classique en spécifiant explicitement `dsntype: PDS` dans son prompt
+- Le tableau récapitulatif affiché après création inclut désormais la ligne `DSNTYPE`
+
+#### Language Model Tools
+
+- `#zos_createDataset` — Mise à jour du schéma : nouveau paramètre optionnel `dsntype` (`LIBRARY` ou `PDS`) pour contrôler explicitement le type de dataset partitionnel ; la description du modèle indique que PDSE (`LIBRARY`) est le défaut
+
+#### Settings
+
+- `zosAssistant.createDefaults.dsntype` — Nouveau setting : type de dataset partitionnel par défaut (`LIBRARY` = PDSE, `PDS` = PDS classique). Valeur par défaut : `LIBRARY`
+
+---
+
 ## [0.6.0] - 2026-03-10
 
 ### Added

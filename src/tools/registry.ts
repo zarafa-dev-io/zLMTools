@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
-import { List, Download, Upload, Copy, Create, Delete } from '@zowe/zos-files-for-zowe-sdk';
+import { List, Download, Upload, Copy, Create, Delete, Get } from '@zowe/zos-files-for-zowe-sdk';
 import { GetJobs, SubmitJobs } from '@zowe/zos-jobs-for-zowe-sdk';
 import { ZoweSessionManager } from '../zowe/session';
 import { isProtectedDataset } from '../zowe/safety';
@@ -132,14 +132,8 @@ export function registerTools(
             ) {
                 const { session } = await sessionManager.getSession();
                 const fullName = `${options.input.dataset}(${options.input.member})`;
-                const content = await Download.dataSet(session, fullName, {
-                    returnEtag: false,
-                    stream: undefined as any,
-                });
-
-                const text = typeof content.apiResponse === 'string'
-                    ? content.apiResponse
-                    : Buffer.from(content.apiResponse).toString('utf-8');
+                const buffer = await Get.dataSet(session, fullName);
+                const text = buffer.toString('utf-8');
 
                 // Tronquer si trop long pour le contexte LLM
                 const lines = text.split('\n');
@@ -204,31 +198,26 @@ export function registerTools(
                 const results: any[] = [];
                 const max = Math.min(members.length, 30);
 
-                for (let i = 0; i < max; i++) {
-                    if (token.isCancellationRequested) { break; }
+                const searchTermUpper = searchTerm.toUpperCase();
+                const concurrency = 10;
 
+                const searchMember = async (memberName: string) => {
+                    if (token.isCancellationRequested) { return; }
                     try {
-                        const content = await Download.dataSet(
-                            session, `${dataset}(${members[i].member})`,
-                            { returnEtag: false, stream: undefined as any }
-                        );
-                        const text = typeof content.apiResponse === 'string'
-                            ? content.apiResponse
-                            : Buffer.from(content.apiResponse).toString('utf-8');
-
-                        const lines = text.split('\n');
+                        const buffer = await Get.dataSet(session, `${dataset}(${memberName})`);
+                        const lines = buffer.toString('utf-8').split(/\r?\n/);
                         const matches = lines
                             .map((line, idx) => ({ line: idx + 1, text: line.trimEnd() }))
-                            .filter(l => l.text.toUpperCase().includes(searchTerm.toUpperCase()));
-
+                            .filter(l => l.text.toUpperCase().includes(searchTermUpper));
                         if (matches.length > 0) {
-                            results.push({
-                                member: members[i].member,
-                                hitCount: matches.length,
-                                hits: matches.slice(0, 5),
-                            });
+                            results.push({ member: memberName, hitCount: matches.length, hits: matches.slice(0, 5) });
                         }
                     } catch { /* skip unreadable members */ }
+                };
+
+                const membersToSearch = members.slice(0, max).map((m: any) => m.member as string);
+                for (let i = 0; i < membersToSearch.length; i += concurrency) {
+                    await Promise.allSettled(membersToSearch.slice(i, i + concurrency).map(searchMember));
                 }
 
                 telemetry.trackSuccess('tool', 'zos_searchContent');
@@ -591,6 +580,7 @@ export function registerTools(
                 options: vscode.LanguageModelToolInvocationOptions<{
                     name: string;
                     dstype?: 'PARTITIONED' | 'SEQUENTIAL' | 'CLASSIC' | 'BINARY' | 'C';
+                    dsntype?: 'LIBRARY' | 'PDS';
                     likeDataset?: string;
                     lrecl?: number;
                     blksize?: number;
@@ -607,7 +597,7 @@ export function registerTools(
                 _token: vscode.CancellationToken
             ) {
                 const { session } = await sessionManager.getSession();
-                const { name, dstype, likeDataset, ...attrs } = options.input;
+                const { name, dstype, dsntype, likeDataset, ...attrs } = options.input;
 
                 const DS_TYPE_ENUM: Record<string, number> = {
                     BINARY: 0, C: 1, CLASSIC: 2, PARTITIONED: 3, SEQUENTIAL: 4,
@@ -655,6 +645,10 @@ export function registerTools(
                         if (opts.blksize === undefined && cfgBlk) { opts.blksize = cfgBlk; }
                     }
                     if (isPds && opts.dirblk === undefined) { opts.dirblk = cfg.get<number>('dirblkPds') ?? 20; }
+                    if (isPds) {
+                        const resolvedDsntype = dsntype ?? cfg.get<string>('dsntype') ?? 'LIBRARY';
+                        opts.dsntype = resolvedDsntype;
+                    }
                     if (opts.volser    === undefined) { const v = cfg.get<string>('volser');    if (v) { opts.volser    = v; } }
                     if (opts.storclass === undefined) { const v = cfg.get<string>('storclass'); if (v) { opts.storclass = v; } }
                     if (opts.mgntclass === undefined) { const v = cfg.get<string>('mgntclass'); if (v) { opts.mgntclass = v; } }
