@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
-import { List, Download, Upload, Create, Delete, Copy, IZosFilesResponse } from '@zowe/zos-files-for-zowe-sdk';
+import { List, Download, Upload, Create, Delete, Copy, Get, IZosFilesResponse } from '@zowe/zos-files-for-zowe-sdk';
 import { ZoweSessionManager } from '../zowe/session';
 import { TelemetryService } from '../utils/telemetry';
 import { DsIntentClassifier } from '../intents/ds.classifier';
@@ -297,14 +297,8 @@ export class DatasetsHandler {
         member: string,
         stream: vscode.ChatResponseStream
     ): Promise<ZosFollowup[]> {
-        const content = await Download.dataSet(session, `${dataset}(${member})`, {
-            returnEtag: false,
-            stream: undefined as any,
-        });
-
-        const text = typeof content.apiResponse === 'string'
-            ? content.apiResponse
-            : Buffer.from(content.apiResponse).toString('utf-8');
+        const buffer = await Get.dataSet(session, `${dataset}(${member})`);
+        const text = buffer.toString('utf-8');
 
         if (!text || text.trim().length === 0) {
             stream.markdown(this.t(`Le membre \`${dataset}(${member})\` est vide.`, `Member \`${dataset}(${member})\` is empty.`));
@@ -370,7 +364,7 @@ export class DatasetsHandler {
     };
 
     private static readonly DS_TYPE_DSORG: Record<string, string> = {
-        BINARY: 'PO', C: 'PO', CLASSIC: 'PO', PARTITIONED: 'PO', SEQUENTIAL: 'PS',
+        BINARY: 'PO-E', C: 'PO-E', CLASSIC: 'PO-E', PARTITIONED: 'PO-E', SEQUENTIAL: 'PS',
     };
 
     private async createDataset(
@@ -420,7 +414,7 @@ export class DatasetsHandler {
             // ── TYPE PRESET ──────────────────────────────────────────
             const dstype = intent.dstype ?? 'PARTITIONED';
             const typeEnum = DatasetsHandler.DS_TYPE_ENUM[dstype] ?? 3;
-            const isPds = DatasetsHandler.DS_TYPE_DSORG[dstype] === 'PO';
+            const isPds = DatasetsHandler.DS_TYPE_DSORG[dstype] === 'PO-E';
 
             // Apply settings defaults only when the intent did not specify the value
             if (options.alcunit   === undefined) { options.alcunit   = cfg.get<string>('alcunit')  ?? 'TRK'; }
@@ -436,6 +430,9 @@ export class DatasetsHandler {
 
             if (isPds && options.dirblk === undefined) {
                 options.dirblk = cfg.get<number>('dirblkPds') ?? 20;
+            }
+            if (isPds && options.dsntype === undefined) {
+                options.dsntype = cfg.get<string>('dsntype') ?? 'LIBRARY';
             }
 
             if (options.volser    === undefined) { const v = cfg.get<string>('volser');    if (v) { options.volser    = v; } }
@@ -459,13 +456,14 @@ export class DatasetsHandler {
                 (options.lrecl   ? `| LRECL | ${options.lrecl} |\n`   : '') +
                 (options.blksize ? `| BLKSIZE | ${options.blksize} |\n` : '') +
                 (options.dirblk  ? `| DIRBLK | ${options.dirblk} |\n`  : '') +
+                (options.dsntype   ? `| DSNTYPE | ${options.dsntype} |\n`   : '') +
                 (options.volser    ? `| VOLSER | ${options.volser} |\n`       : '') +
                 (options.storclass ? `| STORCLASS | ${options.storclass} |\n` : '') +
                 (options.mgntclass ? `| MGNTCLASS | ${options.mgntclass} |\n` : '') +
                 (options.dataclass ? `| DATACLASS | ${options.dataclass} |\n` : '')
             );
 
-            const isPdsResult = DatasetsHandler.DS_TYPE_DSORG[dstype] === 'PO';
+            const isPdsResult = DatasetsHandler.DS_TYPE_DSORG[dstype] === 'PO-E';
             if (isPdsResult) {
                 return [
                     followup(this.t('ℹ️ Info dataset', 'ℹ️ Dataset info'), this.t(`info sur ${intent.name}`, `info on ${intent.name}`), 'ds'),
@@ -569,33 +567,32 @@ export class DatasetsHandler {
         }
 
         stream.markdown(`### 🔍 ${this.t(`Recherche de \`${searchTerm}\` dans \`${dataset}\``, `Search for \`${searchTerm}\` in \`${dataset}\``)}\n\n`);
-        stream.progress(this.t(`Recherche dans ${members.length} membres...`, `Searching ${members.length} members...`));
+        const maxMembers = Math.min(members.length, 50);
+        stream.progress(this.t(`Recherche dans ${maxMembers} membres...`, `Searching ${maxMembers} members...`));
 
         const results: { member: string; lines: { num: number; text: string }[] }[] = [];
-        const maxMembers = Math.min(members.length, 50);
+        const searchTermUpper = searchTerm.toUpperCase();
+        const concurrency = 10;
 
-        for (let i = 0; i < maxMembers; i++) {
-            const memberName = members[i].member;
+        const searchMember = async (memberName: string) => {
             try {
-                const content = await Download.dataSet(
-                    session, `${dataset}(${memberName})`,
-                    { returnEtag: false, stream: undefined as any }
-                );
-                const text = typeof content.apiResponse === 'string'
-                    ? content.apiResponse
-                    : Buffer.from(content.apiResponse).toString('utf-8');
-
+                const buffer = await Get.dataSet(session, `${dataset}(${memberName})`);
+                const lines = buffer.toString('utf-8').split(/\r?\n/);
                 const matchingLines: { num: number; text: string }[] = [];
-                const lines = text.split('\n');
                 for (let lineNum = 0; lineNum < lines.length; lineNum++) {
-                    if (lines[lineNum].toUpperCase().includes(searchTerm.toUpperCase())) {
+                    if (lines[lineNum].toUpperCase().includes(searchTermUpper)) {
                         matchingLines.push({ num: lineNum + 1, text: lines[lineNum].trimEnd() });
                     }
                 }
                 if (matchingLines.length > 0) {
                     results.push({ member: memberName, lines: matchingLines });
                 }
-            } catch { /* skip */ }
+            } catch { /* skip inaccessible members */ }
+        };
+
+        const membersToSearch = members.slice(0, maxMembers).map((m: any) => m.member as string);
+        for (let i = 0; i < membersToSearch.length; i += concurrency) {
+            await Promise.allSettled(membersToSearch.slice(i, i + concurrency).map(searchMember));
         }
 
         if (results.length === 0) {

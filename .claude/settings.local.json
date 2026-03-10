@@ -7,7 +7,9 @@
       "WebFetch(domain:docs.zowe.org)",
       "Bash(npx tsc --noEmit)",
       "WebFetch(domain:raw.githubusercontent.com)",
-      "Bash(ls -lah /c/Users/jmhoc/git/005-LMTools/zLMTools/src/**/*.ts)"
+      "Bash(ls -lah /c/Users/jmhoc/git/005-LMTools/zLMTools/src/**/*.ts)",
+      "Bash(curl -s https://raw.githubusercontent.com/zowe/zowe-cli/master/packages/zosfiles/src/methods/search/Search.ts)",
+      "Bash(grep -E \"\\\\.\\(ts|js|json\\)$\")"
     ]
   }
 }
