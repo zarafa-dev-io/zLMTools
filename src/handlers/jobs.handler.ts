@@ -16,6 +16,7 @@ import {
 } from '../intents/jobs.schemas';
 import { requestConfirmation, describeOperation } from '../zowe/safety';
 import { ZosChatResult, ZosFollowup, createResult, followup } from '../types/chat-result';
+import { detectLanguage, Lang } from '../utils/i18n';
 
 // ============================================================
 // Handler /jobs — Jobs z/OS
@@ -32,6 +33,7 @@ import { ZosChatResult, ZosFollowup, createResult, followup } from '../types/cha
 
 export class JobsHandler {
     private classifier: JobsIntentClassifier;
+    private lang: Lang = 'fr';
 
     constructor(
         private sessionManager: ZoweSessionManager,
@@ -40,6 +42,9 @@ export class JobsHandler {
         this.classifier = new JobsIntentClassifier();
     }
 
+    /** Retourne la chaîne correspondant à la langue du prompt courant. */
+    private t(fr: string, en: string): string { return this.lang === 'fr' ? fr : en; }
+
     async handle(
         request: vscode.ChatRequest,
         chatContext: vscode.ChatContext,
@@ -47,30 +52,33 @@ export class JobsHandler {
         token: vscode.CancellationToken
     ): Promise<ZosChatResult> {
         const prompt = request.prompt.trim();
+        this.lang = detectLanguage(prompt);
 
         if (!prompt) {
             stream.markdown(
-                `**Commande /jobs** — Gestion des jobs z/OS\n\n` +
-                `Tapez votre requête en langage naturel après \`/jobs\`.`
+                this.t(
+                    `**Commande /jobs** — Gestion des jobs z/OS\n\nTapez votre requête en langage naturel après \`/jobs\`.`,
+                    `**Command /jobs** — z/OS Job Management\n\nType your request in natural language after \`/jobs\`.`
+                )
             );
             return createResult('jobs', undefined, [
-                followup('📋 Lister mes jobs', 'liste mes jobs', 'jobs'),
-                followup('🔄 Jobs actifs', 'liste les jobs actifs', 'jobs'),
-                followup('🔍 Statut d\'un job', 'statut de JOB12345', 'jobs'),
+                followup(this.t('📋 Lister mes jobs', '📋 List my jobs'), this.t('liste mes jobs', 'list my jobs'), 'jobs'),
+                followup(this.t('🔄 Jobs actifs', '🔄 Active jobs'), this.t('liste les jobs actifs', 'list active jobs'), 'jobs'),
+                followup(this.t('🔍 Statut d\'un job', '🔍 Job status'), this.t('statut de JOB12345', 'status of JOB12345'), 'jobs'),
             ]);
         }
 
         // ── Step 1 : Classification ──
-        stream.progress('Analyse de la requête...');
-        const intent = await this.classifier.classify(prompt, token);
+        stream.progress(this.t('Analyse de la requête...', 'Analyzing request...'));
+        const intent = await this.classifier.classify(prompt, token, request.model);
 
         if (!intent) {
             stream.markdown(
-                `🤔 Je n'ai pas compris votre requête sur les jobs.`
+                this.t(`🤔 Je n'ai pas compris votre requête sur les jobs.`, `🤔 I could not understand your job request.`)
             );
             return createResult('jobs', undefined, [
-                followup('📋 Lister mes jobs', 'liste mes jobs', 'jobs'),
-                followup('🔄 Jobs actifs', 'liste les jobs actifs', 'jobs'),
+                followup(this.t('📋 Lister mes jobs', '📋 List my jobs'), this.t('liste mes jobs', 'list my jobs'), 'jobs'),
+                followup(this.t('🔄 Jobs actifs', '🔄 Active jobs'), this.t('liste les jobs actifs', 'list active jobs'), 'jobs'),
             ]);
             return [];
         }
@@ -88,10 +96,10 @@ export class JobsHandler {
         }
 
         // ── Step 3 : Exécution ──
-        stream.progress('Connexion à z/OS...');
+        stream.progress(this.t('Connexion à z/OS...', 'Connecting to z/OS...'));
         const { session, profileName } = await this.sessionManager.getSession();
 
-        stream.progress(`Exécution ${intent.type}...`);
+        stream.progress(this.t(`Exécution ${intent.type}...`, `Running ${intent.type}...`));
 
         let followups: ZosFollowup[];
 
@@ -156,17 +164,17 @@ export class JobsHandler {
             if (intent.prefix) { filters.push(`prefix=${intent.prefix}`); }
             if (intent.status) { filters.push(`status=${intent.status}`); }
             stream.markdown(
-                `Aucun job trouvé` +
-                (filters.length > 0 ? ` (filtres : ${filters.join(', ')})` : '') +
+                this.t('Aucun job trouvé', 'No job found') +
+                (filters.length > 0 ? ` (${this.t('filtres', 'filters')} : ${filters.join(', ')})` : '') +
                 `.`
             );
             return [];
         }
 
         const title = this.buildListTitle(intent);
-        stream.markdown(`### 📋 ${title} (${jobs.length} résultats)\n\n`);
+        stream.markdown(`### 📋 ${title} (${jobs.length} ${this.t('résultats', 'results')})\n\n`);
 
-        stream.markdown(`| Job Name | Job ID | Owner | Statut | RC | Classe | Date |\n`);
+        stream.markdown(`| Job Name | Job ID | Owner | ${this.t('Statut', 'Status')} | RC | ${this.t('Classe', 'Class')} | Date |\n`);
         stream.markdown(`|----------|--------|-------|--------|-----|--------|------|\n`);
 
         for (const job of jobs) {
@@ -185,9 +193,10 @@ export class JobsHandler {
         }
 
         stream.markdown(
-            `\n💡 *Actions possibles :*\n` +
-            `- \`/jobs statut de <JOBID>\` — détail d'un job\n` +
-            `- \`/jobs montre la sortie de <JOBID>\` — voir le spool\n`
+            this.t(
+                `\n💡 *Actions possibles :*\n- \`/jobs statut de <JOBID>\` — détail d'un job\n- \`/jobs montre la sortie de <JOBID>\` — voir le spool\n`,
+                `\n💡 *Available actions:*\n- \`/jobs status of <JOBID>\` — job details\n- \`/jobs show output of <JOBID>\` — view spool\n`
+            )
         );
 
         // Followups contextuels basés sur les résultats
@@ -226,17 +235,17 @@ export class JobsHandler {
 
         stream.markdown(`### ${statusEmoji} Job \`${job.jobname}\` (\`${job.jobid}\`)\n\n`);
 
-        stream.markdown(`| Propriété | Valeur |\n`);
+        stream.markdown(`| ${this.t('Propriété', 'Property')} | ${this.t('Valeur', 'Value')} |\n`);
         stream.markdown(`|-----------|--------|\n`);
 
         const props: [string, any][] = [
-            ['Statut', `${statusEmoji} ${job.status}`],
+            [this.t('Statut', 'Status'), `${statusEmoji} ${job.status}`],
             ['Return Code', rc],
             ['Owner', job.owner],
-            ['Classe', job.class],
-            ['Sous-système', job.subsystem],
-            ['Type', job.type],
-            ['Phase', (job as any).phaseName ?? (job as any).phase],
+            [this.t('Classe', 'Class'), job.class],
+            [this.t('Sous-système', 'Subsystem'), job.subsystem],
+            [this.t('Type', 'Type'), job.type],
+            [this.t('Phase', 'Phase'), (job as any).phaseName ?? (job as any).phase],
         ];
 
         for (const [label, value] of props) {
@@ -250,7 +259,7 @@ export class JobsHandler {
             const spoolFiles = await GetJobs.getSpoolFilesForJob(session, job);
             if (spoolFiles.length > 0) {
                 stream.markdown(`\n#### 📂 Spool Files (${spoolFiles.length})\n\n`);
-                stream.markdown(`| DD Name | Step | Procstep | Classe | Taille |\n`);
+                stream.markdown(`| DD Name | Step | Procstep | ${this.t('Classe', 'Class')} | ${this.t('Taille', 'Size')} |\n`);
                 stream.markdown(`|---------|------|----------|--------|--------|\n`);
 
                 for (const sf of spoolFiles) {
@@ -273,20 +282,22 @@ export class JobsHandler {
         // Diagnostic automatique en cas d'erreur
         if (job.retcode && !job.retcode.startsWith('CC 0000')) {
             stream.markdown(
-                `\n💡 Le job a terminé avec **${rc}**. ` +
-                `Tapez \`/jobs montre le JESMSGLG de ${job.jobid}\` pour voir les messages système.`
+                this.t(
+                    `\n💡 Le job a terminé avec **${rc}**. Tapez \`/jobs montre le JESMSGLG de ${job.jobid}\` pour voir les messages système.`,
+                    `\n💡 The job ended with **${rc}**. Type \`/jobs show JESMSGLG of ${job.jobid}\` to see system messages.`
+                )
             );
         }
 
-        // Proposer des actions
         stream.markdown(
-            `\n💡 \`/jobs montre la sortie de ${job.jobid}\` pour lire le spool.`
+            this.t(`\n💡 \`/jobs montre la sortie de ${job.jobid}\` pour lire le spool.`,
+                   `\n💡 \`/jobs show output of ${job.jobid}\` to read the spool.`)
         );
 
         return [
-            followup(`📜 Voir le spool de ${job.jobid}`, `montre la sortie de ${job.jobid}`, 'jobs'),
-            followup(`📄 JESMSGLG de ${job.jobid}`, `affiche le JESMSGLG de ${job.jobid}`, 'jobs'),
-            followup('📋 Retour à la liste', 'liste mes jobs', 'jobs'),
+            followup(this.t(`📜 Voir le spool de ${job.jobid}`, `📜 View spool of ${job.jobid}`), this.t(`montre la sortie de ${job.jobid}`, `show output of ${job.jobid}`), 'jobs'),
+            followup(this.t(`📄 JESMSGLG de ${job.jobid}`, `📄 JESMSGLG of ${job.jobid}`), this.t(`affiche le JESMSGLG de ${job.jobid}`, `show JESMSGLG of ${job.jobid}`), 'jobs'),
+            followup(this.t('📋 Retour à la liste', '📋 Back to list'), this.t('liste mes jobs', 'list my jobs'), 'jobs'),
         ];
     }
 
@@ -308,7 +319,7 @@ export class JobsHandler {
         const spoolFiles = await GetJobs.getSpoolFilesForJob(session, job);
 
         if (spoolFiles.length === 0) {
-            stream.markdown(`Aucun spool file pour le job \`${job.jobname}\` (\`${job.jobid}\`).`);
+            stream.markdown(this.t(`Aucun spool file pour le job \`${job.jobname}\` (\`${job.jobid}\`).`, `No spool file for job \`${job.jobname}\` (\`${job.jobid}\`).`));
             return [];
         }
 
@@ -320,8 +331,10 @@ export class JobsHandler {
 
             if (filtered.length === 0) {
                 stream.markdown(
-                    `DD \`${intent.spoolFilter}\` non trouvé dans le spool de \`${job.jobid}\`.\n\n` +
-                    `DD disponibles : ${spoolFiles.map(sf => `\`${sf.ddname}\``).join(', ')}`
+                    this.t(
+                        `DD \`${intent.spoolFilter}\` non trouvé dans le spool de \`${job.jobid}\`.\n\nDD disponibles : ${spoolFiles.map(sf => `\`${sf.ddname}\``).join(', ')}`,
+                        `DD \`${intent.spoolFilter}\` not found in spool of \`${job.jobid}\`.\n\nAvailable DDs: ${spoolFiles.map(sf => `\`${sf.ddname}\``).join(', ')}`
+                    )
                 );
                 return [];
             }
@@ -334,7 +347,7 @@ export class JobsHandler {
 
         // Sinon, lister les spool files avec un aperçu
         stream.markdown(
-            `### 📜 Spool de \`${job.jobname}\` (\`${job.jobid}\`) — ` +
+            `### 📜 ${this.t('Spool de', 'Spool of')} \`${job.jobname}\` (\`${job.jobid}\`) — ` +
             `${this.formatReturnCode(job)}\n\n`
         );
 
@@ -352,8 +365,8 @@ export class JobsHandler {
         // Lister les non-affichés
         const remaining = spoolFiles.filter(sf => !displayedDDs.has(sf.ddname));
         if (remaining.length > 0) {
-            stream.markdown(`\n#### Autres spool files\n\n`);
-            stream.markdown(`| DD Name | Step | Taille |\n`);
+            stream.markdown(`\n#### ${this.t('Autres spool files', 'Other spool files')}\n\n`);
+            stream.markdown(`| DD Name | Step | ${this.t('Taille', 'Size')} |\n`);
             stream.markdown(`|---------|------|--------|\n`);
 
             for (const sf of remaining) {
@@ -366,13 +379,14 @@ export class JobsHandler {
             }
 
             stream.markdown(
-                `\n💡 \`/jobs affiche le <DDNAME> de ${job.jobid}\` pour voir le contenu.`
+                this.t(`\n💡 \`/jobs affiche le <DDNAME> de ${job.jobid}\` pour voir le contenu.`,
+                       `\n💡 \`/jobs show <DDNAME> of ${job.jobid}\` to view content.`)
             );
         }
 
         return [
-            followup(`🔍 Statut de ${job.jobid}`, `statut de ${job.jobid}`, 'jobs'),
-            followup('📋 Retour à la liste', 'liste mes jobs', 'jobs'),
+            followup(this.t(`🔍 Statut de ${job.jobid}`, `🔍 Status of ${job.jobid}`), this.t(`statut de ${job.jobid}`, `status of ${job.jobid}`), 'jobs'),
+            followup(this.t('📋 Retour à la liste', '📋 Back to list'), this.t('liste mes jobs', 'list my jobs'), 'jobs'),
         ];
     }
 
@@ -409,10 +423,10 @@ export class JobsHandler {
 
         if (target.length === 0) {
             stream.markdown(
-                `DD \`${intent.ddName}\` non trouvé` +
-                (intent.stepName ? ` dans le step \`${intent.stepName}\`` : '') +
-                ` pour \`${job.jobid}\`.\n\n` +
-                `DD disponibles : ${spoolFiles.map(sf => `\`${sf.ddname}\``).join(', ')}`
+                this.t(
+                    `DD \`${intent.ddName}\` non trouvé` + (intent.stepName ? ` dans le step \`${intent.stepName}\`` : '') + ` pour \`${job.jobid}\`.\n\nDD disponibles : ${spoolFiles.map(sf => `\`${sf.ddname}\``).join(', ')}`,
+                    `DD \`${intent.ddName}\` not found` + (intent.stepName ? ` in step \`${intent.stepName}\`` : '') + ` for \`${job.jobid}\`.\n\nAvailable DDs: ${spoolFiles.map(sf => `\`${sf.ddname}\``).join(', ')}`
+                )
             );
             return [];
         }
@@ -439,8 +453,10 @@ export class JobsHandler {
 
         if (job.status !== 'ACTIVE' && job.status !== 'INPUT') {
             stream.markdown(
-                `⚠️ Le job \`${job.jobname}\` (\`${job.jobid}\`) est en statut **${job.status}** ` +
-                `et ne peut pas être annulé.`
+                this.t(
+                    `⚠️ Le job \`${job.jobname}\` (\`${job.jobid}\`) est en statut **${job.status}** et ne peut pas être annulé.`,
+                    `⚠️ Job \`${job.jobname}\` (\`${job.jobid}\`) is in status **${job.status}** and cannot be cancelled.`
+                )
             );
             return [];
         }
@@ -448,13 +464,13 @@ export class JobsHandler {
         await CancelJobs.cancelJob(session, job.jobid, job.jobname);
 
         stream.markdown(
-            `✅ **Job annulé** — \`${job.jobname}\` (\`${job.jobid}\`)\n\n` +
-            `Le job était en statut **${job.status}** au moment de l'annulation.`
+            `✅ **${this.t('Job annulé', 'Job cancelled')}** — \`${job.jobname}\` (\`${job.jobid}\`)\n\n` +
+            this.t(`Le job était en statut **${job.status}** au moment de l'annulation.`, `The job was in status **${job.status}** when cancelled.`)
         );
 
         return [
-            followup(`🔍 Vérifier le statut`, `statut de ${job.jobid}`, 'jobs'),
-            followup('📋 Lister mes jobs', 'liste mes jobs', 'jobs'),
+            followup(this.t('🔍 Vérifier le statut', '🔍 Check status'), this.t(`statut de ${job.jobid}`, `status of ${job.jobid}`), 'jobs'),
+            followup(this.t('📋 Lister mes jobs', '📋 List my jobs'), this.t('liste mes jobs', 'list my jobs'), 'jobs'),
         ];
     }
 
@@ -476,12 +492,12 @@ export class JobsHandler {
         await DeleteJobs.deleteJob(session, job.jobid, job.jobname);
 
         stream.markdown(
-            `✅ **Job purgé** — \`${job.jobname}\` (\`${job.jobid}\`)\n\n` +
-            `Le job et son spool ont été supprimés de la file JES.`
+            `✅ **${this.t('Job purgé', 'Job purged')}** — \`${job.jobname}\` (\`${job.jobid}\`)\n\n` +
+            this.t('Le job et son spool ont été supprimés de la file JES.', 'The job and its spool have been removed from the JES queue.')
         );
 
         return [
-            followup('📋 Lister mes jobs', 'liste mes jobs', 'jobs'),
+            followup(this.t('📋 Lister mes jobs', '📋 List my jobs'), this.t('liste mes jobs', 'list my jobs'), 'jobs'),
         ];
     }
 
@@ -505,15 +521,17 @@ export class JobsHandler {
             const rc = this.formatReturnCode(job);
             const emoji = this.getStatusEmoji(job.status, job.retcode);
             stream.markdown(
-                `${emoji} Le job \`${job.jobname}\` (\`${job.jobid}\`) est déjà terminé — **${rc}**.\n\n` +
-                `💡 \`/jobs montre la sortie de ${job.jobid}\` pour voir le spool.`
+                this.t(
+                    `${emoji} Le job \`${job.jobname}\` (\`${job.jobid}\`) est déjà terminé — **${rc}**.\n\n💡 \`/jobs montre la sortie de ${job.jobid}\` pour voir le spool.`,
+                    `${emoji} Job \`${job.jobname}\` (\`${job.jobid}\`) is already completed — **${rc}**.\n\n💡 \`/jobs show output of ${job.jobid}\` to view the spool.`
+                )
             );
             return [];
         }
 
         stream.markdown(
-            `### ⏳ Surveillance de \`${job.jobname}\` (\`${job.jobid}\`)\n\n` +
-            `Statut initial : **${job.status}**\n\n`
+            `### ⏳ ${this.t('Surveillance de', 'Monitoring')} \`${job.jobname}\` (\`${job.jobid}\`)\n\n` +
+            `${this.t('Statut initial', 'Initial status')} : **${job.status}**\n\n`
         );
 
         // Polling avec timeout
@@ -527,8 +545,10 @@ export class JobsHandler {
 
             if (elapsed > MAX_WAIT_MS) {
                 stream.markdown(
-                    `\n⏰ **Timeout** — Le job est toujours en cours après 5 minutes.\n` +
-                    `Vérifiez manuellement avec \`/jobs statut de ${job.jobid}\``
+                    this.t(
+                        `\n⏰ **Timeout** — Le job est toujours en cours après 5 minutes.\nVérifiez manuellement avec \`/jobs statut de ${job.jobid}\``,
+                        `\n⏰ **Timeout** — The job is still running after 5 minutes.\nCheck manually with \`/jobs status of ${job.jobid}\``
+                    )
                 );
                 return [];
             }
@@ -552,24 +572,26 @@ export class JobsHandler {
                     const emoji = this.getStatusEmoji(currentJob.status, currentJob.retcode);
 
                     stream.markdown(
-                        `\n${emoji} **Job terminé** — \`${currentJob.jobname}\` (\`${currentJob.jobid}\`) ` +
-                        `→ **${rc}** (en ${Math.round(elapsed / 1000)}s)\n`
+                        `\n${emoji} **${this.t('Job terminé', 'Job completed')}** — \`${currentJob.jobname}\` (\`${currentJob.jobid}\`) ` +
+                        `→ **${rc}** (${this.t('en', 'in')} ${Math.round(elapsed / 1000)}s)\n`
                     );
 
-                    // Afficher automatiquement le résumé s'il y a eu une erreur
                     if (currentJob.retcode && !currentJob.retcode.startsWith('CC 0000')) {
                         stream.markdown(
-                            `\n⚠️ Le job a terminé en erreur. ` +
-                            `\`/jobs montre le JESMSGLG de ${currentJob.jobid}\` pour diagnostiquer.`
+                            this.t(
+                                `\n⚠️ Le job a terminé en erreur. \`/jobs montre le JESMSGLG de ${currentJob.jobid}\` pour diagnostiquer.`,
+                                `\n⚠️ The job ended with an error. \`/jobs show JESMSGLG of ${currentJob.jobid}\` to diagnose.`
+                            )
                         );
                     } else {
                         stream.markdown(
-                            `\n💡 \`/jobs montre la sortie de ${currentJob.jobid}\` pour voir le spool.`
+                            this.t(`\n💡 \`/jobs montre la sortie de ${currentJob.jobid}\` pour voir le spool.`,
+                                   `\n💡 \`/jobs show output of ${currentJob.jobid}\` to view the spool.`)
                         );
                     }
                     return [
-                        followup(`📜 Voir le spool`, `montre la sortie de ${currentJob.jobid}`, 'jobs'),
-                        followup(`🔍 Statut détaillé`, `statut de ${currentJob.jobid}`, 'jobs'),
+                        followup(this.t('📜 Voir le spool', '📜 View spool'), this.t(`montre la sortie de ${currentJob.jobid}`, `show output of ${currentJob.jobid}`), 'jobs'),
+                        followup(this.t('🔍 Statut détaillé', '🔍 Detailed status'), this.t(`statut de ${currentJob.jobid}`, `status of ${currentJob.jobid}`), 'jobs'),
                     ];
                     return [];
                 }
@@ -579,7 +601,7 @@ export class JobsHandler {
             }
         }
 
-        stream.markdown('\n❌ Surveillance annulée par l\'utilisateur.');
+        stream.markdown(this.t('\n❌ Surveillance annulée par l\'utilisateur.', '\n❌ Monitoring cancelled by user.'));
     }
 
     // ================================================================
@@ -639,14 +661,14 @@ export class JobsHandler {
             );
 
             if (!content || content.trim().length === 0) {
-                stream.markdown(`\n**${spoolFile.ddname}** (${spoolFile.stepname ?? '-'}) — *vide*\n`);
+                stream.markdown(`\n**${spoolFile.ddname}** (${spoolFile.stepname ?? '-'}) — *${this.t('vide', 'empty')}*\n`);
                 return [];
             }
 
             const lines = content.split('\n');
             const truncated = lines.length > 200;
             const displayContent = truncated
-                ? lines.slice(0, 200).join('\n') + `\n... (tronqué, ${lines.length} lignes au total)`
+                ? lines.slice(0, 200).join('\n') + `\n... (${this.t(`tronqué, ${lines.length} lignes au total`, `truncated, ${lines.length} lines total`)})`
                 : content;
 
             const stepInfo = spoolFile.stepname ? ` / ${spoolFile.stepname}` : '';
@@ -660,7 +682,7 @@ export class JobsHandler {
             stream.markdown(`\`\`\`\n${displayContent}\n\`\`\`\n`);
         } catch (error) {
             stream.markdown(
-                `\n**${spoolFile.ddname}** — ⚠️ Impossible de lire le contenu.\n`
+                `\n**${spoolFile.ddname}** — ⚠️ ${this.t('Impossible de lire le contenu.', 'Unable to read content.')}\n`
             );
         }
     }
@@ -716,12 +738,18 @@ export class JobsHandler {
      */
     private jobNotFoundMessage(intent: { jobId?: string; jobName?: string }): string {
         if (intent.jobId) {
-            return `Job \`${intent.jobId}\` non trouvé. Vérifiez l'ID ou utilisez \`/jobs liste\` pour chercher.`;
+            return this.t(
+                `Job \`${intent.jobId}\` non trouvé. Vérifiez l'ID ou utilisez \`/jobs liste\` pour chercher.`,
+                `Job \`${intent.jobId}\` not found. Check the ID or use \`/jobs list\` to search.`
+            );
         }
         if (intent.jobName) {
-            return `Aucun job récent trouvé avec le nom \`${intent.jobName}\`. Essayez \`/jobs liste les jobs ${intent.jobName}\`.`;
+            return this.t(
+                `Aucun job récent trouvé avec le nom \`${intent.jobName}\`. Essayez \`/jobs liste les jobs ${intent.jobName}\`.`,
+                `No recent job found with name \`${intent.jobName}\`. Try \`/jobs list jobs ${intent.jobName}\`.`
+            );
         }
-        return `Job non trouvé. Précisez un Job ID ou un Job Name.`;
+        return this.t('Job non trouvé. Précisez un Job ID ou un Job Name.', 'Job not found. Specify a Job ID or Job Name.');
     }
 
     /**
@@ -739,11 +767,11 @@ export class JobsHandler {
     private describeJobOperation(intent: JobsIntent): string {
         switch (intent.type) {
             case 'CANCEL_JOB':
-                return `Annulation du job ${intent.jobName} (${intent.jobId})`;
+                return this.t(`Annulation du job ${intent.jobName} (${intent.jobId})`, `Cancel job ${intent.jobName} (${intent.jobId})`);
             case 'PURGE_JOB':
-                return `Purge du job ${intent.jobName} (${intent.jobId}) — spool supprimé définitivement`;
+                return this.t(`Purge du job ${intent.jobName} (${intent.jobId}) — spool supprimé définitivement`, `Purge job ${intent.jobName} (${intent.jobId}) — spool permanently deleted`);
             default:
-                return `Opération ${intent.type}`;
+                return this.t(`Opération ${intent.type}`, `Operation ${intent.type}`);
         }
     }
 }

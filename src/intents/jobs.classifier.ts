@@ -80,19 +80,9 @@ export class JobsIntentClassifier {
 
     async classify(
         userPrompt: string,
-        token: vscode.CancellationToken
+        token: vscode.CancellationToken,
+        model: vscode.LanguageModelChat
     ): Promise<JobsIntent | null> {
-
-        const [model] = await vscode.lm.selectChatModels({
-            vendor: 'copilot',
-            family: 'gpt-4o'
-        });
-
-        if (!model) {
-            throw new Error(
-                'Aucun modèle Copilot disponible. Vérifiez que GitHub Copilot est activé.'
-            );
-        }
 
         const messages = [
             vscode.LanguageModelChatMessage.User(

@@ -15,6 +15,7 @@ import {
     describeOperation,
 } from '../zowe/safety';
 import { ZosChatResult, ZosFollowup, createResult, followup } from '../types/chat-result';
+import { detectLanguage, Lang } from '../utils/i18n';
 
 // ============================================================
 // Handler /ds — Datasets & Membres PDS
@@ -25,6 +26,7 @@ import { ZosChatResult, ZosFollowup, createResult, followup } from '../types/cha
 
 export class DatasetsHandler {
     private classifier: DsIntentClassifier;
+    private lang: Lang = 'fr';
 
     constructor(
         private sessionManager: ZoweSessionManager,
@@ -33,6 +35,9 @@ export class DatasetsHandler {
         this.classifier = new DsIntentClassifier();
     }
 
+    /** Retourne la chaîne correspondant à la langue du prompt courant. */
+    private t(fr: string, en: string): string { return this.lang === 'fr' ? fr : en; }
+
     async handle(
         request: vscode.ChatRequest,
         chatContext: vscode.ChatContext,
@@ -40,31 +45,37 @@ export class DatasetsHandler {
         token: vscode.CancellationToken
     ): Promise<ZosChatResult> {
         const prompt = request.prompt.trim();
+        this.lang = detectLanguage(prompt);
 
         if (!prompt) {
             stream.markdown(
-                `**Commande /ds** — Gestion des datasets z/OS\n\n` +
-                `Tapez votre requête en langage naturel après \`/ds\`.`
+                this.t(
+                    `**Commande /ds** — Gestion des datasets z/OS\n\nTapez votre requête en langage naturel après \`/ds\`.`,
+                    `**Command /ds** — z/OS Dataset Management\n\nType your request in natural language after \`/ds\`.`
+                )
             );
             return createResult('ds', undefined, [
-                followup('📁 Lister des datasets', 'liste les datasets HLQ.**', 'ds'),
-                followup('📄 Lister des membres', 'montre les membres de HLQ.COBOL.SRC', 'ds'),
-                followup('📝 Lire un membre', 'affiche HLQ.COBOL.SRC(PGMA)', 'ds'),
-                followup('🔍 Chercher du texte', 'cherche PERFORM dans HLQ.COBOL.SRC', 'ds'),
+                followup(this.t('📁 Lister des datasets', '📁 List datasets'), this.t('liste les datasets HLQ.**', 'list datasets HLQ.**'), 'ds'),
+                followup(this.t('📄 Lister des membres', '📄 List members'), this.t('montre les membres de HLQ.COBOL.SRC', 'show members of HLQ.COBOL.SRC'), 'ds'),
+                followup(this.t('📝 Lire un membre', '📝 Read a member'), this.t('affiche HLQ.COBOL.SRC(PGMA)', 'show HLQ.COBOL.SRC(PGMA)'), 'ds'),
+                followup(this.t('🔍 Chercher du texte', '🔍 Search text'), this.t('cherche PERFORM dans HLQ.COBOL.SRC', 'search PERFORM in HLQ.COBOL.SRC'), 'ds'),
             ]);
         }
 
         // ── Step 1 : Classification ──
-        stream.progress('Analyse de la requête...');
-        const intent = await this.classifier.classify(prompt, token);
+        stream.progress(this.t('Analyse de la requête...', 'Analyzing request...'));
+        const intent = await this.classifier.classify(prompt, token, request.model);
 
         if (!intent) {
             stream.markdown(
-                `🤔 Je n'ai pas compris votre requête sur les datasets.`
+                this.t(
+                    `🤔 Je n'ai pas compris votre requête sur les datasets.`,
+                    `🤔 I could not understand your dataset request.`
+                )
             );
             return createResult('ds', undefined, [
-                followup('📁 Lister des datasets', 'liste les datasets HLQ.**', 'ds'),
-                followup('ℹ️ Info sur un dataset', 'info sur HLQ.COBOL.LOAD', 'ds'),
+                followup(this.t('📁 Lister des datasets', '📁 List datasets'), this.t('liste les datasets HLQ.**', 'list datasets HLQ.**'), 'ds'),
+                followup(this.t('ℹ️ Info sur un dataset', 'ℹ️ Dataset info'), this.t('info sur HLQ.COBOL.LOAD', 'info on HLQ.COBOL.LOAD'), 'ds'),
             ]);
         }
 
@@ -84,9 +95,9 @@ export class DatasetsHandler {
         }
 
         // ── Step 3 : Exécution ──
-        stream.progress('Connexion à z/OS...');
+        stream.progress(this.t('Connexion à z/OS...', 'Connecting to z/OS...'));
         const { session, profileName } = await this.sessionManager.getSession();
-        stream.progress(`Exécution ${intent.type}...`);
+        stream.progress(this.t(`Exécution ${intent.type}...`, `Running ${intent.type}...`));
 
         let followups: ZosFollowup[];
 
@@ -169,12 +180,12 @@ export class DatasetsHandler {
         const items = response.apiResponse?.items ?? [];
 
         if (items.length === 0) {
-            stream.markdown(`Aucun dataset trouvé pour le pattern \`${pattern}\`.`);
+            stream.markdown(this.t(`Aucun dataset trouvé pour le pattern \`${pattern}\`.`, `No dataset found for pattern \`${pattern}\`.`));
             return [];
         }
 
-        stream.markdown(`### 📁 Datasets — \`${pattern}\` (${items.length} résultats)\n\n`);
-        stream.markdown(`| Dataset | Organisation | RECFM | LRECL | Volume |\n`);
+        stream.markdown(`### 📁 Datasets — \`${pattern}\` (${items.length} ${this.t('résultats', 'results')})\n\n`);
+        stream.markdown(`| Dataset | ${this.t('Organisation', 'Organization')} | RECFM | LRECL | Volume |\n`);
         stream.markdown(`|---------|-------------|-------|-------|--------|\n`);
 
         for (const ds of items) {
@@ -190,19 +201,19 @@ export class DatasetsHandler {
         if (pdsItems.length > 0) {
             const firstPds = pdsItems[0].dsname;
             suggestions.push(
-                followup(`📄 Membres de ${firstPds}`, `montre les membres de ${firstPds}`, 'ds')
+                followup(this.t(`📄 Membres de ${firstPds}`, `📄 Members of ${firstPds}`), this.t(`montre les membres de ${firstPds}`, `show members of ${firstPds}`), 'ds')
             );
         }
         if (items.length > 0) {
             const first = items[0].dsname;
             suggestions.push(
-                followup(`ℹ️ Info sur ${first}`, `info sur ${first}`, 'ds')
+                followup(this.t(`ℹ️ Info sur ${first}`, `ℹ️ Info on ${first}`), this.t(`info sur ${first}`, `info on ${first}`), 'ds')
             );
         }
         if (pdsItems.length > 1) {
             const second = pdsItems[1].dsname;
             suggestions.push(
-                followup(`📄 Membres de ${second}`, `montre les membres de ${second}`, 'ds')
+                followup(this.t(`📄 Membres de ${second}`, `📄 Members of ${second}`), this.t(`montre les membres de ${second}`, `show members of ${second}`), 'ds')
             );
         }
 
@@ -227,18 +238,19 @@ export class DatasetsHandler {
         if (items.length === 0) {
             stream.markdown(
                 pattern
-                    ? `Aucun membre correspondant à \`${pattern}\` dans \`${dataset}\`.`
-                    : `Le dataset \`${dataset}\` ne contient aucun membre (ou n'est pas un PDS).`
+                    ? this.t(`Aucun membre correspondant à \`${pattern}\` dans \`${dataset}\`.`, `No member matching \`${pattern}\` in \`${dataset}\`.`)
+                    : this.t(`Le dataset \`${dataset}\` ne contient aucun membre (ou n'est pas un PDS).`, `Dataset \`${dataset}\` has no members (or is not a PDS).`)
             );
             return [];
         }
 
-        stream.markdown(`### 📄 Membres de \`${dataset}\` (${items.length})\n\n`);
+        stream.markdown(`### 📄 ${this.t(`Membres de`, `Members of`)} \`${dataset}\` (${items.length})\n\n`);
 
         if (items.length > 20) {
             const columns = 4;
             const rows = Math.ceil(items.length / columns);
-            stream.markdown(`| ${Array(columns).fill('Membre').join(' | ')} |\n`);
+            const memberLabel = this.t('Membre', 'Member');
+            stream.markdown(`| ${Array(columns).fill(memberLabel).join(' | ')} |\n`);
             stream.markdown(`| ${Array(columns).fill('------').join(' | ')} |\n`);
             for (let r = 0; r < rows; r++) {
                 const cells = [];
@@ -249,12 +261,12 @@ export class DatasetsHandler {
                 stream.markdown(`| ${cells.join(' | ')} |\n`);
             }
         } else {
-            stream.markdown(`| Membre | Modifié | Taille | ID |\n`);
+            stream.markdown(`| ${this.t('Membre', 'Member')} | ${this.t('Modifié', 'Changed')} | ${this.t('Taille', 'Size')} | ID |\n`);
             stream.markdown(`|--------|---------|--------|----|\n`);
             for (const m of items) {
                 stream.markdown(
                     `| \`${m.member}\` | ${m.changed ?? m.m4date ?? '-'} ` +
-                    `| ${m.init !== undefined ? `${m.init} lignes` : '-'} | ${m.user ?? '-'} |\n`
+                    `| ${m.init !== undefined ? `${m.init} ${this.t('lignes', 'lines')}` : '-'} | ${m.user ?? '-'} |\n`
                 );
             }
         }
@@ -266,8 +278,8 @@ export class DatasetsHandler {
         for (const m of topMembers) {
             suggestions.push(
                 followup(
-                    `📝 Lire ${m.member}`,
-                    `affiche ${dataset}(${m.member})`,
+                    this.t(`📝 Lire ${m.member}`, `📝 Read ${m.member}`),
+                    this.t(`affiche ${dataset}(${m.member})`, `show ${dataset}(${m.member})`),
                     'ds'
                 )
             );
@@ -295,26 +307,26 @@ export class DatasetsHandler {
             : Buffer.from(content.apiResponse).toString('utf-8');
 
         if (!text || text.trim().length === 0) {
-            stream.markdown(`Le membre \`${dataset}(${member})\` est vide.`);
+            stream.markdown(this.t(`Le membre \`${dataset}(${member})\` est vide.`, `Member \`${dataset}(${member})\` is empty.`));
             return [];
         }
 
         const lines = text.split('\n');
-        const lang = this.detectLanguage(member, text);
+        const codeLang = this.detectCodeLanguage(member, text);
 
-        stream.markdown(`### 📝 \`${dataset}(${member})\` — ${lines.length} lignes\n\n`);
-        stream.markdown(`\`\`\`${lang}\n${text}\n\`\`\`\n`);
+        stream.markdown(`### 📝 \`${dataset}(${member})\` — ${lines.length} ${this.t('lignes', 'lines')}\n\n`);
+        stream.markdown(`\`\`\`${codeLang}\n${text}\n\`\`\`\n`);
 
         stream.button({
             command: 'zos.openMember',
-            title: '📂 Ouvrir dans l\'éditeur',
+            title: this.t('📂 Ouvrir dans l\'éditeur', '📂 Open in editor'),
             arguments: [dataset, member],
         });
 
         return [
-            followup('🔍 Chercher dans ce PDS', `cherche PERFORM dans ${dataset}`, 'ds'),
-            followup('📄 Voir les autres membres', `montre les membres de ${dataset}`, 'ds'),
-            followup('ℹ️ Info sur le dataset', `info sur ${dataset}`, 'ds'),
+            followup(this.t('🔍 Chercher dans ce PDS', '🔍 Search in this PDS'), this.t(`cherche PERFORM dans ${dataset}`, `search PERFORM in ${dataset}`), 'ds'),
+            followup(this.t('📄 Voir les autres membres', '📄 View other members'), this.t(`montre les membres de ${dataset}`, `show members of ${dataset}`), 'ds'),
+            followup(this.t('ℹ️ Info sur le dataset', 'ℹ️ Dataset info'), this.t(`info sur ${dataset}`, `info on ${dataset}`), 'ds'),
         ];
     }
 
@@ -333,12 +345,13 @@ export class DatasetsHandler {
         const lines = content.split('\n').length;
 
         stream.markdown(
-            `✅ **Écriture réussie** — \`${dataset}(${member})\`\n\n${lines} lignes écrites.`
+            this.t(`✅ **Écriture réussie** — \`${dataset}(${member})\`\n\n${lines} lignes écrites.`,
+                   `✅ **Write successful** — \`${dataset}(${member})\`\n\n${lines} lines written.`)
         );
 
         return [
-            followup('📝 Relire le membre', `affiche ${dataset}(${member})`, 'ds'),
-            followup('📄 Voir les membres', `montre les membres de ${dataset}`, 'ds'),
+            followup(this.t('📝 Relire le membre', '📝 Re-read member'), this.t(`affiche ${dataset}(${member})`, `show ${dataset}(${member})`), 'ds'),
+            followup(this.t('📄 Voir les membres', '📄 View members'), this.t(`montre les membres de ${dataset}`, `show members of ${dataset}`), 'ds'),
         ];
     }
 
@@ -392,13 +405,13 @@ export class DatasetsHandler {
 
         if (intent.likeDataset) {
             // ── ALLOCATE LIKE ────────────────────────────────────────
-            stream.progress(`Creating \`${intent.name}\` like \`${intent.likeDataset}\`...`);
+            stream.progress(this.t(`Création de \`${intent.name}\` sur le modèle de \`${intent.likeDataset}\`...`, `Creating \`${intent.name}\` like \`${intent.likeDataset}\`...`));
             await Create.dataSetLike(session, intent.name, intent.likeDataset, options as any);
 
             stream.markdown(
-                `### ✅ Dataset created — \`${intent.name}\`\n\n` +
-                `| Attribute | Value |\n|-----------|-------|\n` +
-                `| Model | \`${intent.likeDataset}\` |\n` +
+                `### ✅ ${this.t('Dataset créé', 'Dataset created')} — \`${intent.name}\`\n\n` +
+                `| ${this.t('Attribut', 'Attribute')} | ${this.t('Valeur', 'Value')} |\n|-----------|-------|\n` +
+                `| ${this.t('Modèle', 'Model')} | \`${intent.likeDataset}\` |\n` +
                 (Object.keys(options).length > 0
                     ? Object.entries(options).map(([k, v]) => `| ${k.toUpperCase()} | ${v} |\n`).join('')
                     : '')
@@ -430,14 +443,14 @@ export class DatasetsHandler {
             if (options.mgntclass === undefined) { const v = cfg.get<string>('mgntclass'); if (v) { options.mgntclass = v; } }
             if (options.dataclass === undefined) { const v = cfg.get<string>('dataclass'); if (v) { options.dataclass = v; } }
 
-            stream.progress(`Creating dataset \`${intent.name}\` (${dstype})...`);
+            stream.progress(this.t(`Création du dataset \`${intent.name}\` (${dstype})...`, `Creating dataset \`${intent.name}\` (${dstype})...`));
             await Create.dataSet(session, typeEnum, intent.name, options as any);
 
             const dsorg = DatasetsHandler.DS_TYPE_DSORG[dstype];
             stream.markdown(
-                `### ✅ Dataset created — \`${intent.name}\`\n\n` +
-                `| Attribute | Value |\n|-----------|-------|\n` +
-                `| Type | ${dstype} |\n` +
+                `### ✅ ${this.t('Dataset créé', 'Dataset created')} — \`${intent.name}\`\n\n` +
+                `| ${this.t('Attribut', 'Attribute')} | ${this.t('Valeur', 'Value')} |\n|-----------|-------|\n` +
+                `| ${this.t('Type', 'Type')} | ${dstype} |\n` +
                 `| DSORG | ${dsorg} |\n` +
                 `| ALCUNIT | ${options.alcunit} |\n` +
                 `| PRIMARY | ${options.primary} |\n` +
@@ -455,13 +468,13 @@ export class DatasetsHandler {
             const isPdsResult = DatasetsHandler.DS_TYPE_DSORG[dstype] === 'PO';
             if (isPdsResult) {
                 return [
-                    followup('ℹ️ Dataset info', `info sur ${intent.name}`, 'ds'),
-                    followup('➕ Create a member', `crée un membre NEWPGM dans ${intent.name}`, 'ds'),
+                    followup(this.t('ℹ️ Info dataset', 'ℹ️ Dataset info'), this.t(`info sur ${intent.name}`, `info on ${intent.name}`), 'ds'),
+                    followup(this.t('➕ Créer un membre', '➕ Create a member'), this.t(`crée un membre NEWPGM dans ${intent.name}`, `create member NEWPGM in ${intent.name}`), 'ds'),
                 ];
             }
         }
 
-        return [ followup('ℹ️ Dataset info', `info sur ${intent.name}`, 'ds') ];
+        return [ followup(this.t('ℹ️ Info dataset', 'ℹ️ Dataset info'), this.t(`info sur ${intent.name}`, `info on ${intent.name}`), 'ds') ];
     }
 
     // ================================================================
@@ -479,13 +492,15 @@ export class DatasetsHandler {
         await Upload.bufferToDataSet(session, buffer, `${dataset}(${member})`, { binary: false });
 
         stream.markdown(
-            `✅ **Membre créé** — \`${dataset}(${member})\`\n\n` +
-            (content ? `${content.split('\n').length} lignes écrites.` : `Membre vide créé.`)
+            `✅ **${this.t('Membre créé', 'Member created')}** — \`${dataset}(${member})\`\n\n` +
+            (content
+                ? this.t(`${content.split('\n').length} lignes écrites.`, `${content.split('\n').length} lines written.`)
+                : this.t('Membre vide créé.', 'Empty member created.'))
         );
 
         return [
-            followup('📝 Lire le membre', `affiche ${dataset}(${member})`, 'ds'),
-            followup('📄 Voir les membres', `montre les membres de ${dataset}`, 'ds'),
+            followup(this.t('📝 Lire le membre', '📝 Read member'), this.t(`affiche ${dataset}(${member})`, `show ${dataset}(${member})`), 'ds'),
+            followup(this.t('📄 Voir les membres', '📄 View members'), this.t(`montre les membres de ${dataset}`, `show members of ${dataset}`), 'ds'),
         ];
     }
 
@@ -498,16 +513,16 @@ export class DatasetsHandler {
         member: string,
         stream: vscode.ChatResponseStream
     ): Promise<ZosFollowup[]> {
-        stream.progress(`Deleting member \`${dataset}(${member})\`...`);
+        stream.progress(this.t(`Suppression de \`${dataset}(${member})\`...`, `Deleting member \`${dataset}(${member})\`...`));
         await Delete.dataSet(session, `${dataset}(${member})`);
 
         stream.markdown(
-            `### ✅ Member deleted — \`${dataset}(${member})\`\n\n` +
-            `> ⚠️ This operation is irreversible.`
+            `### ✅ ${this.t('Membre supprimé', 'Member deleted')} — \`${dataset}(${member})\`\n\n` +
+            `> ⚠️ ${this.t('Cette opération est irréversible.', 'This operation is irreversible.')}`
         );
 
         return [
-            followup('📄 List remaining members', `montre les membres de ${dataset}`, 'ds'),
+            followup(this.t('📄 Membres restants', '📄 Remaining members'), this.t(`montre les membres de ${dataset}`, `show members of ${dataset}`), 'ds'),
         ];
     }
 
@@ -520,18 +535,18 @@ export class DatasetsHandler {
         stream: vscode.ChatResponseStream,
         volume?: string
     ): Promise<ZosFollowup[]> {
-        stream.progress(`Deleting \`${dataset}\`${volume ? ` (volume: ${volume})` : ''}...`);
+        stream.progress(this.t(`Suppression de \`${dataset}\`${volume ? ` (volume: ${volume})` : ''}...`, `Deleting \`${dataset}\`${volume ? ` (volume: ${volume})` : ''}...`));
         await Delete.dataSet(session, dataset, volume ? { volume } : undefined);
 
         stream.markdown(
-            `### ✅ Dataset deleted — \`${dataset}\`\n\n` +
+            `### ✅ ${this.t('Dataset supprimé', 'Dataset deleted')} — \`${dataset}\`\n\n` +
             (volume ? `> Volume: \`${volume}\`\n\n` : '') +
-            `> ⚠️ This operation is irreversible.`
+            `> ⚠️ ${this.t('Cette opération est irréversible.', 'This operation is irreversible.')}`
         );
 
         const hlq = dataset.split('.').slice(0, -1).join('.');
         return [
-            followup('📁 List remaining datasets', `liste les datasets ${hlq}.**`, 'ds'),
+            followup(this.t('📁 Datasets restants', '📁 Remaining datasets'), this.t(`liste les datasets ${hlq}.**`, `list datasets ${hlq}.**`), 'ds'),
         ];
     }
 
@@ -549,12 +564,12 @@ export class DatasetsHandler {
         const members = membersResponse.apiResponse?.items ?? [];
 
         if (members.length === 0) {
-            stream.markdown(`Aucun membre trouvé dans \`${dataset}\`.`);
+            stream.markdown(this.t(`Aucun membre trouvé dans \`${dataset}\`.`, `No member found in \`${dataset}\`.`));
             return [];
         }
 
-        stream.markdown(`### 🔍 Recherche de \`${searchTerm}\` dans \`${dataset}\`\n\n`);
-        stream.progress(`Recherche dans ${members.length} membres...`);
+        stream.markdown(`### 🔍 ${this.t(`Recherche de \`${searchTerm}\` dans \`${dataset}\``, `Search for \`${searchTerm}\` in \`${dataset}\``)}\n\n`);
+        stream.progress(this.t(`Recherche dans ${members.length} membres...`, `Searching ${members.length} members...`));
 
         const results: { member: string; lines: { num: number; text: string }[] }[] = [];
         const maxMembers = Math.min(members.length, 50);
@@ -584,14 +599,14 @@ export class DatasetsHandler {
         }
 
         if (results.length === 0) {
-            stream.markdown(`Aucune occurrence de \`${searchTerm}\` trouvée dans ${maxMembers} membres.`);
+            stream.markdown(this.t(`Aucune occurrence de \`${searchTerm}\` trouvée dans ${maxMembers} membres.`, `No occurrence of \`${searchTerm}\` found in ${maxMembers} members.`));
             return [];
         }
 
         const totalHits = results.reduce((sum, r) => sum + r.lines.length, 0);
         stream.markdown(
-            `**${totalHits} occurrences** dans **${results.length} membres** ` +
-            `(${maxMembers}/${members.length} scannés)\n\n`
+            `**${totalHits} ${this.t('occurrences', 'occurrences')}** ${this.t('dans', 'in')} **${results.length} ${this.t('membres', 'members')}** ` +
+            `(${maxMembers}/${members.length} ${this.t('scannés', 'scanned')})\n\n`
         );
 
         for (const result of results) {
@@ -601,7 +616,7 @@ export class DatasetsHandler {
                 stream.markdown(`${String(line.num).padStart(6)} | ${line.text}\n`);
             }
             if (result.lines.length > 10) {
-                stream.markdown(`  ... et ${result.lines.length - 10} autres lignes\n`);
+                stream.markdown(`  ... ${this.t(`et ${result.lines.length - 10} autres lignes`, `and ${result.lines.length - 10} more lines`)}\n`);
             }
             stream.markdown(`\`\`\`\n\n`);
         }
@@ -613,8 +628,8 @@ export class DatasetsHandler {
 
         return topResults.map(r =>
             followup(
-                `📝 Lire ${r.member} (${r.lines.length} hits)`,
-                `affiche ${dataset}(${r.member})`,
+                this.t(`📝 Lire ${r.member} (${r.lines.length} hits)`, `📝 Read ${r.member} (${r.lines.length} hits)`),
+                this.t(`affiche ${dataset}(${r.member})`, `show ${dataset}(${r.member})`),
                 'ds'
             )
         );
@@ -632,23 +647,30 @@ export class DatasetsHandler {
         const items = response.apiResponse?.items ?? [];
 
         if (items.length === 0) {
-            stream.markdown(`Dataset \`${dataset}\` non trouvé.`);
+            stream.markdown(this.t(`Dataset \`${dataset}\` non trouvé.`, `Dataset \`${dataset}\` not found.`));
             return [];
         }
 
         const ds = items[0];
 
-        stream.markdown(`### ℹ️ Informations — \`${ds.dsname}\`\n\n`);
-        stream.markdown(`| Propriété | Valeur |\n|-----------|--------|\n`);
+        stream.markdown(`### ℹ️ ${this.t('Informations', 'Information')} — \`${ds.dsname}\`\n\n`);
+        stream.markdown(`| ${this.t('Propriété', 'Property')} | ${this.t('Valeur', 'Value')} |\n|-----------|--------|\n`);
 
         const props: [string, any][] = [
-            ['Organisation', ds.dsorg], ['RECFM', ds.recfm], ['LRECL', ds.lrecl],
-            ['BLKSIZE', ds.blksize], ['Volume', ds.vol], ['Unité', ds.unit],
-            ['Création', ds.cdate], ['Référencé', ds.rdate], ['Expiration', ds.edate],
-            ['Taille utilisée', ds.used !== undefined ? `${ds.used} extents` : undefined],
-            ['Primaire', ds.primary], ['Secondaire', ds.secondary],
-            ['Catalogue', ds.catnm], ['SMS Data', ds.dataclass],
-            ['SMS Mgmt', ds.mgntclass], ['SMS Storage', ds.storeclass],
+            [this.t('Organisation', 'Organization'), ds.dsorg],
+            ['RECFM', ds.recfm], ['LRECL', ds.lrecl], ['BLKSIZE', ds.blksize],
+            [this.t('Volume', 'Volume'), ds.vol],
+            [this.t('Unité', 'Unit'), ds.unit],
+            [this.t('Création', 'Created'), ds.cdate],
+            [this.t('Référencé', 'Referenced'), ds.rdate],
+            [this.t('Expiration', 'Expiration'), ds.edate],
+            [this.t('Taille utilisée', 'Used size'), ds.used !== undefined ? `${ds.used} extents` : undefined],
+            [this.t('Primaire', 'Primary'), ds.primary],
+            [this.t('Secondaire', 'Secondary'), ds.secondary],
+            [this.t('Catalogue', 'Catalog'), ds.catnm],
+            ['SMS Data', ds.dataclass],
+            ['SMS Mgmt', ds.mgntclass],
+            ['SMS Storage', ds.storeclass],
         ];
 
         for (const [label, value] of props) {
@@ -661,8 +683,8 @@ export class DatasetsHandler {
 
         if (ds.dsorg?.includes('PO')) {
             suggestions.push(
-                followup('📄 Voir les membres', `montre les membres de ${dataset}`, 'ds'),
-                followup('🔍 Chercher dans ce PDS', `cherche PERFORM dans ${dataset}`, 'ds'),
+                followup(this.t('📄 Voir les membres', '📄 View members'), this.t(`montre les membres de ${dataset}`, `show members of ${dataset}`), 'ds'),
+                followup(this.t('🔍 Chercher dans ce PDS', '🔍 Search in this PDS'), this.t(`cherche PERFORM dans ${dataset}`, `search PERFORM in ${dataset}`), 'ds'),
             );
         }
 
@@ -700,19 +722,19 @@ export class DatasetsHandler {
         );
 
         stream.markdown(
-            `### ⬇️ Membre téléchargé — \`${dataset}(${member})\`\n\n` +
-            `Fichier local : \`${relPath}\`\n`
+            `### ⬇️ ${this.t('Membre téléchargé', 'Member downloaded')} — \`${dataset}(${member})\`\n\n` +
+            `${this.t('Fichier local', 'Local file')} : \`${relPath}\`\n`
         );
 
         stream.button({
             command: 'vscode.open',
-            title: '📂 Ouvrir le fichier',
+            title: this.t('📂 Ouvrir le fichier', '📂 Open file'),
             arguments: [vscode.Uri.file(localFile)],
         });
 
         return [
-            followup('📄 Voir les membres', `montre les membres de ${dataset}`, 'ds'),
-            followup('⬇️ Télécharger tous les membres', `download tous les membres de ${dataset}`, 'ds'),
+            followup(this.t('📄 Voir les membres', '📄 View members'), this.t(`montre les membres de ${dataset}`, `show members of ${dataset}`), 'ds'),
+            followup(this.t('⬇️ Télécharger tous les membres', '⬇️ Download all members'), this.t(`download tous les membres de ${dataset}`, `download all members of ${dataset}`), 'ds'),
         ];
     }
 
@@ -729,7 +751,7 @@ export class DatasetsHandler {
         const dsDir = path.join(localDir, dataset.replace(/\./g, path.sep));
         fs.mkdirSync(dsDir, { recursive: true });
 
-        stream.progress(`Téléchargement de tous les membres de ${dataset}...`);
+        stream.progress(this.t(`Téléchargement de tous les membres de ${dataset}...`, `Downloading all members of ${dataset}...`));
 
         await Download.allMembers(session, dataset, {
             directory: dsDir,
@@ -742,18 +764,18 @@ export class DatasetsHandler {
         );
 
         stream.markdown(
-            `### ⬇️ Membres téléchargés — \`${dataset}\`\n\n` +
-            `**${files.length} fichier(s)** dans \`${relDir}\`\n`
+            `### ⬇️ ${this.t('Membres téléchargés', 'Members downloaded')} — \`${dataset}\`\n\n` +
+            `**${files.length} ${this.t('fichier(s)', 'file(s)')}** ${this.t('dans', 'in')} \`${relDir}\`\n`
         );
 
         stream.button({
             command: 'revealFileInOS',
-            title: '📁 Ouvrir le dossier',
+            title: this.t('📁 Ouvrir le dossier', '📁 Open folder'),
             arguments: [vscode.Uri.file(dsDir)],
         });
 
         return [
-            followup('📄 Lister les membres', `montre les membres de ${dataset}`, 'ds'),
+            followup(this.t('📄 Lister les membres', '📄 List members'), this.t(`montre les membres de ${dataset}`, `show members of ${dataset}`), 'ds'),
         ];
     }
 
@@ -767,12 +789,12 @@ export class DatasetsHandler {
         targetDir?: string
     ): Promise<ZosFollowup[]> {
         // Step 1 : récupérer la liste des datasets
-        stream.progress(`Récupération de la liste des datasets pour ${pattern}...`);
+        stream.progress(this.t(`Récupération de la liste des datasets pour ${pattern}...`, `Fetching dataset list for ${pattern}...`));
         const listResponse = await List.dataSet(session, pattern, { attributes: true });
         const dataSetObjs = listResponse.apiResponse?.items ?? [];
 
         if (dataSetObjs.length === 0) {
-            stream.markdown(`Aucun dataset trouvé pour le pattern \`${pattern}\`.`);
+            stream.markdown(this.t(`Aucun dataset trouvé pour le pattern \`${pattern}\`.`, `No dataset found for pattern \`${pattern}\`.`));
             return [];
         }
 
@@ -780,14 +802,14 @@ export class DatasetsHandler {
         const localDir = this.resolveDownloadDir(targetDir);
         fs.mkdirSync(localDir, { recursive: true });
 
-        stream.progress(`Téléchargement de ${dataSetObjs.length} dataset(s)...`);
+        stream.progress(this.t(`Téléchargement de ${dataSetObjs.length} dataset(s)...`, `Downloading ${dataSetObjs.length} dataset(s)...`));
 
         await Download.allDataSets(session, dataSetObjs, {
             directory: localDir,
         });
 
         // Step 3 : renommage — majuscules + extension dérivée du nom de PDS
-        stream.progress('Renommage des fichiers téléchargés...');
+        stream.progress(this.t('Renommage des fichiers téléchargés...', 'Renaming downloaded files...'));
         this.renameDatasetFiles(localDir, dataSetObjs);
 
         const relDir = path.relative(
@@ -796,23 +818,23 @@ export class DatasetsHandler {
         );
 
         stream.markdown(
-            `### ⬇️ Datasets téléchargés — \`${pattern}\`\n\n` +
-            `**${dataSetObjs.length} dataset(s)** dans \`${relDir || '.'}\`\n\n` +
-            `| Dataset | Organisation |\n|---------|-------------|\n` +
+            `### ⬇️ ${this.t('Datasets téléchargés', 'Datasets downloaded')} — \`${pattern}\`\n\n` +
+            `**${dataSetObjs.length} dataset(s)** ${this.t('dans', 'in')} \`${relDir || '.'}\`\n\n` +
+            `| Dataset | ${this.t('Organisation', 'Organization')} |\n|---------|-------------|\n` +
             dataSetObjs.slice(0, 20).map((ds: any) =>
                 `| \`${ds.dsname}\` | ${ds.dsorg ?? '-'} |`
             ).join('\n') +
-            (dataSetObjs.length > 20 ? `\n| ... et ${dataSetObjs.length - 20} autres | |` : '')
+            (dataSetObjs.length > 20 ? `\n| ... ${this.t(`et ${dataSetObjs.length - 20} autres`, `and ${dataSetObjs.length - 20} more`)} | |` : '')
         );
 
         stream.button({
             command: 'revealFileInOS',
-            title: '📁 Ouvrir le dossier',
+            title: this.t('📁 Ouvrir le dossier', '📁 Open folder'),
             arguments: [vscode.Uri.file(localDir)],
         });
 
         return [
-            followup('📁 Lister les datasets', `liste les datasets ${pattern}`, 'ds'),
+            followup(this.t('📁 Lister les datasets', '📁 List datasets'), this.t(`liste les datasets ${pattern}`, `list datasets ${pattern}`), 'ds'),
         ];
     }
 
@@ -829,27 +851,27 @@ export class DatasetsHandler {
         const filePath = this.resolveLocalPath(localPath);
 
         if (!fs.existsSync(filePath)) {
-            stream.markdown(`❌ Fichier introuvable : \`${filePath}\``);
+            stream.markdown(this.t(`❌ Fichier introuvable : \`${filePath}\``, `❌ File not found: \`${filePath}\``));
             return [];
         }
 
         const target = `${dataset}(${member})`;
-        stream.progress(`Upload de \`${filePath}\` vers \`${target}\`...`);
+        stream.progress(this.t(`Upload de \`${filePath}\` vers \`${target}\`...`, `Uploading \`${filePath}\` to \`${target}\`...`));
 
         await Upload.fileToDataset(session, filePath, target);
 
         const size = fs.statSync(filePath).size;
         stream.markdown(
-            `### ⬆️ Upload réussi — \`${target}\`\n\n` +
-            `| Propriété | Valeur |\n|-----------|--------|\n` +
-            `| Source | \`${filePath}\` |\n` +
-            `| Taille | ${(size / 1024).toFixed(1)} Ko |\n` +
-            `| Destination | \`${target}\` |\n`
+            `### ⬆️ ${this.t('Upload réussi', 'Upload successful')} — \`${target}\`\n\n` +
+            `| ${this.t('Propriété', 'Property')} | ${this.t('Valeur', 'Value')} |\n|-----------|--------|\n` +
+            `| ${this.t('Source', 'Source')} | \`${filePath}\` |\n` +
+            `| ${this.t('Taille', 'Size')} | ${(size / 1024).toFixed(1)} ${this.t('Ko', 'KB')} |\n` +
+            `| ${this.t('Destination', 'Destination')} | \`${target}\` |\n`
         );
 
         return [
-            followup(`📝 Lire ${member}`, `affiche ${dataset}(${member})`, 'ds'),
-            followup('📄 Voir les membres', `montre les membres de ${dataset}`, 'ds'),
+            followup(this.t(`📝 Lire ${member}`, `📝 Read ${member}`), this.t(`affiche ${dataset}(${member})`, `show ${dataset}(${member})`), 'ds'),
+            followup(this.t('📄 Voir les membres', '📄 View members'), this.t(`montre les membres de ${dataset}`, `show members of ${dataset}`), 'ds'),
         ];
     }
 
@@ -865,7 +887,7 @@ export class DatasetsHandler {
         const dirPath = this.resolveLocalPath(localPath);
 
         if (!fs.existsSync(dirPath) || !fs.statSync(dirPath).isDirectory()) {
-            stream.markdown(`❌ Répertoire introuvable : \`${dirPath}\``);
+            stream.markdown(this.t(`❌ Répertoire introuvable : \`${dirPath}\``, `❌ Directory not found: \`${dirPath}\``));
             return [];
         }
 
@@ -874,28 +896,28 @@ export class DatasetsHandler {
         );
 
         if (files.length === 0) {
-            stream.markdown(`❌ Le répertoire \`${dirPath}\` est vide.`);
+            stream.markdown(this.t(`❌ Le répertoire \`${dirPath}\` est vide.`, `❌ Directory \`${dirPath}\` is empty.`));
             return [];
         }
 
-        stream.progress(`Upload de ${files.length} fichier(s) vers \`${dataset}\`...`);
+        stream.progress(this.t(`Upload de ${files.length} fichier(s) vers \`${dataset}\`...`, `Uploading ${files.length} file(s) to \`${dataset}\`...`));
 
         await Upload.dirToPds(session, dirPath, dataset);
 
         stream.markdown(
-            `### ⬆️ Upload réussi — \`${dataset}\`\n\n` +
-            `**${files.length} fichier(s)** uploadés depuis \`${dirPath}\`\n\n` +
-            `| Fichier local | Membre |\n|---------------|--------|\n` +
+            `### ⬆️ ${this.t('Upload réussi', 'Upload successful')} — \`${dataset}\`\n\n` +
+            `**${files.length} ${this.t('fichier(s)', 'file(s)')}** ${this.t('uploadés depuis', 'uploaded from')} \`${dirPath}\`\n\n` +
+            `| ${this.t('Fichier local', 'Local file')} | ${this.t('Membre', 'Member')} |\n|---------------|--------|\n` +
             files.slice(0, 20).map(f => {
                 const memberName = path.basename(f, path.extname(f)).toUpperCase().slice(0, 8);
                 return `| \`${f}\` | \`${memberName}\` |`;
             }).join('\n') +
-            (files.length > 20 ? `\n| ... et ${files.length - 20} autres | |` : '')
+            (files.length > 20 ? `\n| ... ${this.t(`et ${files.length - 20} autres`, `and ${files.length - 20} more`)} | |` : '')
         );
 
         return [
-            followup('📄 Voir les membres uploadés', `montre les membres de ${dataset}`, 'ds'),
-            followup('🔍 Chercher dans le PDS', `cherche IDENTIFICATION dans ${dataset}`, 'ds'),
+            followup(this.t('📄 Voir les membres uploadés', '📄 View uploaded members'), this.t(`montre les membres de ${dataset}`, `show members of ${dataset}`), 'ds'),
+            followup(this.t('🔍 Chercher dans le PDS', '🔍 Search in PDS'), this.t(`cherche IDENTIFICATION dans ${dataset}`, `search IDENTIFICATION in ${dataset}`), 'ds'),
         ];
     }
 
@@ -911,7 +933,7 @@ export class DatasetsHandler {
         stream: vscode.ChatResponseStream,
         replace = false
     ): Promise<ZosFollowup[]> {
-        stream.progress(`Copying \`${fromDataset}(${fromMember})\` → \`${toDataset}(${toMember})\`...`);
+        stream.progress(this.t(`Copie de \`${fromDataset}(${fromMember})\` → \`${toDataset}(${toMember})\`...`, `Copying \`${fromDataset}(${fromMember})\` → \`${toDataset}(${toMember})\`...`));
 
         await Copy.dataSet(
             session,
@@ -920,15 +942,15 @@ export class DatasetsHandler {
         );
 
         stream.markdown(
-            `### ✅ Member copied\n\n` +
-            `| | Dataset | Member |\n|--|---------|--------|\n` +
-            `| **From** | \`${fromDataset}\` | \`${fromMember}\` |\n` +
-            `| **To**   | \`${toDataset}\` | \`${toMember}\` |\n`
+            `### ✅ ${this.t('Membre copié', 'Member copied')}\n\n` +
+            `| | Dataset | ${this.t('Membre', 'Member')} |\n|--|---------|--------|\n` +
+            `| **${this.t('Source', 'From')}** | \`${fromDataset}\` | \`${fromMember}\` |\n` +
+            `| **${this.t('Destination', 'To')}**   | \`${toDataset}\` | \`${toMember}\` |\n`
         );
 
         return [
-            followup(`📝 Read ${toMember}`, `affiche ${toDataset}(${toMember})`, 'ds'),
-            followup('📄 List target members', `montre les membres de ${toDataset}`, 'ds'),
+            followup(this.t(`📝 Lire ${toMember}`, `📝 Read ${toMember}`), this.t(`affiche ${toDataset}(${toMember})`, `show ${toDataset}(${toMember})`), 'ds'),
+            followup(this.t('📄 Membres destination', '📄 Target members'), this.t(`montre les membres de ${toDataset}`, `show members of ${toDataset}`), 'ds'),
         ];
     }
 
@@ -942,7 +964,7 @@ export class DatasetsHandler {
         stream: vscode.ChatResponseStream,
         replace = false
     ): Promise<ZosFollowup[]> {
-        stream.progress(`Inspecting \`${fromDataset}\`...`);
+        stream.progress(this.t(`Inspection de \`${fromDataset}\`...`, `Inspecting \`${fromDataset}\`...`));
         const isPds = await Copy.isPDS(session, fromDataset);
 
         if (isPds) {
@@ -950,7 +972,7 @@ export class DatasetsHandler {
             const membersResp = await List.allMembers(session, fromDataset);
             const members: { member: string }[] = membersResp.apiResponse?.items ?? [];
 
-            stream.progress(`Copying ${members.length} member(s) from \`${fromDataset}\` to \`${toDataset}\`...`);
+            stream.progress(this.t(`Copie de ${members.length} membre(s) de \`${fromDataset}\` vers \`${toDataset}\`...`, `Copying ${members.length} member(s) from \`${fromDataset}\` to \`${toDataset}\`...`));
             let copied = 0;
             const errors: string[] = [];
 
@@ -968,20 +990,20 @@ export class DatasetsHandler {
             }
 
             stream.markdown(
-                `### ✅ PDS copied — \`${fromDataset}\` → \`${toDataset}\`\n\n` +
-                `**${copied} / ${members.length}** member(s) copied successfully.\n` +
+                `### ✅ ${this.t('PDS copié', 'PDS copied')} — \`${fromDataset}\` → \`${toDataset}\`\n\n` +
+                `**${copied} / ${members.length}** ${this.t('membre(s) copié(s).', 'member(s) copied successfully.')}\n` +
                 (errors.length > 0
-                    ? `\n⚠️ **${errors.length} error(s):**\n${errors.slice(0, 5).map(e => `- ${e}`).join('\n')}\n`
+                    ? `\n⚠️ **${errors.length} ${this.t('erreur(s)', 'error(s)')}:**\n${errors.slice(0, 5).map(e => `- ${e}`).join('\n')}\n`
                     : '')
             );
 
             return [
-                followup('📄 List target members', `montre les membres de ${toDataset}`, 'ds'),
-                followup('ℹ️ Target dataset info', `info sur ${toDataset}`, 'ds'),
+                followup(this.t('📄 Membres destination', '📄 Target members'), this.t(`montre les membres de ${toDataset}`, `show members of ${toDataset}`), 'ds'),
+                followup(this.t('ℹ️ Info dataset destination', 'ℹ️ Target dataset info'), this.t(`info sur ${toDataset}`, `info on ${toDataset}`), 'ds'),
             ];
         } else {
             // Sequential dataset: `overwrite` deletes the target before recreating+copying
-            stream.progress(`Copying sequential dataset \`${fromDataset}\` → \`${toDataset}\`...`);
+            stream.progress(this.t(`Copie du dataset séquentiel \`${fromDataset}\` → \`${toDataset}\`...`, `Copying sequential dataset \`${fromDataset}\` → \`${toDataset}\`...`));
 
             await Copy.dataSet(
                 session,
@@ -990,14 +1012,14 @@ export class DatasetsHandler {
             );
 
             stream.markdown(
-                `### ✅ Dataset copied\n\n` +
+                `### ✅ ${this.t('Dataset copié', 'Dataset copied')}\n\n` +
                 `| | Dataset |\n|--|--------|\n` +
-                `| **From** | \`${fromDataset}\` |\n` +
-                `| **To**   | \`${toDataset}\` |\n`
+                `| **${this.t('Source', 'From')}** | \`${fromDataset}\` |\n` +
+                `| **${this.t('Destination', 'To')}**   | \`${toDataset}\` |\n`
             );
 
             return [
-                followup('ℹ️ Target dataset info', `info sur ${toDataset}`, 'ds'),
+                followup(this.t('ℹ️ Info dataset destination', 'ℹ️ Target dataset info'), this.t(`info sur ${toDataset}`, `info on ${toDataset}`), 'ds'),
             ];
         }
     }
@@ -1083,7 +1105,7 @@ export class DatasetsHandler {
         }
     }
 
-    private detectLanguage(member: string, content: string): string {
+    private detectCodeLanguage(member: string, content: string): string {
         if (content.match(/^\s{6}\w/m) || content.includes('IDENTIFICATION DIVISION')) return 'cobol';
         if (content.includes('//') && content.includes(' DD ')) return 'jcl';
         if (member.startsWith('ASM') || content.includes(' CSECT') || content.includes(' USING ')) return 'asm';

@@ -6,6 +6,7 @@ import { ZoweSessionManager } from './zowe/session';
 import { TelemetryService } from './utils/telemetry';
 import { registerTools } from './tools/registry';
 import { ZosChatResult, ZosFollowup, createResult, followup } from './types/chat-result';
+import { detectLanguage, Lang, tr } from './utils/i18n';
 
 const PARTICIPANT_ID = 'zdevops.zos';
 
@@ -88,6 +89,8 @@ export function activate(context: vscode.ExtensionContext) {
                 }
             }
 
+            const lang = detectLanguage(request.prompt);
+
             switch (request.command) {
                 case 'ds':
                     return await datasetsHandler.handle(request, chatContext, stream, token);
@@ -102,11 +105,12 @@ export function activate(context: vscode.ExtensionContext) {
                 case 'lpar':
                     return await lparHandler.handle(request, chatContext, stream, token);
                 default:
-                    return handleFreeForm(sessionManager, stream);
+                    return handleFreeForm(sessionManager, stream, lang);
             }
         } catch (error: any) {
             telemetry.trackError(request.command ?? 'freeform', error);
-            stream.markdown(`\n\n⚠️ **Erreur z/OS** : ${formatZoweError(error)}`);
+            const lang = detectLanguage(request.prompt);
+            stream.markdown(`\n\n⚠️ **${tr('Erreur z/OS', 'z/OS Error', lang)}** : ${formatZoweError(error)}`);
             return createResult(request.command ?? 'freeform', undefined, []);
         } finally {
             telemetry.trackDuration(request.command ?? 'freeform', Date.now() - startTime);
@@ -151,28 +155,38 @@ export function activate(context: vscode.ExtensionContext) {
 
 function handleFreeForm(
     sessionManager: ZoweSessionManager,
-    stream: vscode.ChatResponseStream
+    stream: vscode.ChatResponseStream,
+    lang: Lang
 ): ZosChatResult {
     const activeLpar = sessionManager.getActiveProfileName();
     const lparInfo = activeLpar
-        ? `\n\n🖥️ LPAR actif : **${activeLpar}**`
+        ? `\n\n🖥️ ${tr('LPAR actif', 'Active LPAR', lang)} : **${activeLpar}**`
         : '';
 
     stream.markdown(
-        `Je peux vous aider à interagir avec z/OS. Utilisez une commande :\n\n` +
-        `- \`/ds\` — Datasets & membres PDS\n` +
-        `- \`/jobs\` — Statut et spool des jobs\n` +
-        `- \`/run\` — Soumettre du JCL\n` +
-        `- \`/lpar\` — Changer de partition mainframe\n` +
-        `- \`/tso\` — Commandes TSO/Console\n` +
-        `- \`/uss\` — Filesystem USS` +
-        lparInfo
+        tr(
+            `Je peux vous aider à interagir avec z/OS. Utilisez une commande :\n\n` +
+            `- \`/ds\` — Datasets & membres PDS\n` +
+            `- \`/jobs\` — Statut et spool des jobs\n` +
+            `- \`/run\` — Soumettre du JCL\n` +
+            `- \`/lpar\` — Changer de partition mainframe\n` +
+            `- \`/tso\` — Commandes TSO/Console\n` +
+            `- \`/uss\` — Filesystem USS`,
+            `I can help you interact with z/OS. Use a command:\n\n` +
+            `- \`/ds\` — Datasets & PDS members\n` +
+            `- \`/jobs\` — Job status and spool output\n` +
+            `- \`/run\` — Submit JCL\n` +
+            `- \`/lpar\` — Switch mainframe partition\n` +
+            `- \`/tso\` — TSO/Console commands\n` +
+            `- \`/uss\` — USS Filesystem`,
+            lang
+        ) + lparInfo
     );
 
     return createResult('freeform', undefined, [
-        followup('🖥️ Voir les LPARs', '', 'lpar'),
-        followup('📁 Lister mes datasets', 'liste les datasets HLQ.**', 'ds'),
-        followup('📋 Voir mes jobs', 'liste mes jobs', 'jobs'),
+        followup(tr('🖥️ Voir les LPARs', '🖥️ View LPARs', lang), '', 'lpar'),
+        followup(tr('📁 Lister mes datasets', '📁 List my datasets', lang), tr('liste les datasets HLQ.**', 'list datasets HLQ.**', lang), 'ds'),
+        followup(tr('📋 Voir mes jobs', '📋 View my jobs', lang), tr('liste mes jobs', 'list my jobs', lang), 'jobs'),
     ]);
 }
 

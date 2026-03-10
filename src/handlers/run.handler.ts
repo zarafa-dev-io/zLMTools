@@ -22,6 +22,7 @@ import {
     isProtectedDataset,
 } from '../zowe/safety';
 import { ZosChatResult, ZosFollowup, createResult, followup } from '../types/chat-result';
+import { detectLanguage, Lang } from '../utils/i18n';
 
 // ============================================================
 // Handler /run — Soumission de JCL
@@ -35,6 +36,7 @@ import { ZosChatResult, ZosFollowup, createResult, followup } from '../types/cha
 
 export class RunHandler {
     private classifier: RunIntentClassifier;
+    private lang: Lang = 'fr';
 
     constructor(
         private sessionManager: ZoweSessionManager,
@@ -43,6 +45,9 @@ export class RunHandler {
         this.classifier = new RunIntentClassifier();
     }
 
+    /** Retourne la chaîne correspondant à la langue du prompt courant. */
+    private t(fr: string, en: string): string { return this.lang === 'fr' ? fr : en; }
+
     async handle(
         request: vscode.ChatRequest,
         chatContext: vscode.ChatContext,
@@ -50,29 +55,32 @@ export class RunHandler {
         token: vscode.CancellationToken
     ): Promise<ZosChatResult> {
         const prompt = request.prompt.trim();
+        this.lang = detectLanguage(prompt);
 
         if (!prompt) {
             stream.markdown(
-                `**Commande /run** — Soumission de JCL\n\n` +
-                `Tapez votre requête en langage naturel après \`/run\`.`
+                this.t(
+                    `**Commande /run** — Soumission de JCL\n\nTapez votre requête en langage naturel après \`/run\`.`,
+                    `**Command /run** — JCL Submission\n\nType your request in natural language after \`/run\`.`
+                )
             );
             return createResult('run', undefined, [
-                followup('🚀 Soumettre du JCL', 'soumets HLQ.JCL(BATCH01)', 'run'),
-                followup('🚀 Soumettre et surveiller', 'soumets et surveille HLQ.JCL(NIGHTLY)', 'run'),
-                followup('🔄 Relancer un job', 'relance le job JOB12345', 'run'),
+                followup(this.t('🚀 Soumettre du JCL', '🚀 Submit JCL'), this.t('soumets HLQ.JCL(BATCH01)', 'submit HLQ.JCL(BATCH01)'), 'run'),
+                followup(this.t('🚀 Soumettre et surveiller', '🚀 Submit and monitor'), this.t('soumets et surveille HLQ.JCL(NIGHTLY)', 'submit and monitor HLQ.JCL(NIGHTLY)'), 'run'),
+                followup(this.t('🔄 Relancer un job', '🔄 Resubmit a job'), this.t('relance le job JOB12345', 'resubmit job JOB12345'), 'run'),
             ]);
         }
 
         // ── Step 1 : Classification ──
-        stream.progress('Analyse de la requête...');
-        const intent = await this.classifier.classify(prompt, token);
+        stream.progress(this.t('Analyse de la requête...', 'Analyzing request...'));
+        const intent = await this.classifier.classify(prompt, token, request.model);
 
         if (!intent) {
             stream.markdown(
-                `🤔 Je n'ai pas compris votre requête de soumission.`
+                this.t(`🤔 Je n'ai pas compris votre requête de soumission.`, `🤔 I could not understand your submission request.`)
             );
             return createResult('run', undefined, [
-                followup('🚀 Soumettre du JCL', 'soumets HLQ.JCL(BATCH01)', 'run'),
+                followup(this.t('🚀 Soumettre du JCL', '🚀 Submit JCL'), this.t('soumets HLQ.JCL(BATCH01)', 'submit HLQ.JCL(BATCH01)'), 'run'),
             ]);
         }
 
@@ -90,7 +98,7 @@ export class RunHandler {
         }
 
         // ── Step 3 : Exécution ──
-        stream.progress('Connexion à z/OS...');
+        stream.progress(this.t('Connexion à z/OS...', 'Connecting to z/OS...'));
         const { session, profileName } = await this.sessionManager.getSession();
 
         let followups: ZosFollowup[];
@@ -138,7 +146,7 @@ export class RunHandler {
     ): Promise<ZosChatResult> {
         const fullName = member ? `${dataset}(${member})` : dataset;
 
-        stream.progress(`Soumission de ${fullName}...`);
+        stream.progress(this.t(`Soumission de ${fullName}...`, `Submitting ${fullName}...`));
 
         const job: IJob = await SubmitJobs.submitJob(session, fullName);
 
@@ -156,18 +164,15 @@ export class RunHandler {
         // Valider le JCL minimal
         if (!jcl.includes('//') || !jcl.includes(' JOB ')) {
             stream.markdown(
-                `⚠️ Le JCL fourni semble incomplet. Un JCL valide doit contenir ` +
-                `au minimum une carte JOB (\`//jobname JOB ...\`).\n\n` +
-                `Exemple minimal :\n` +
-                `\`\`\`jcl\n` +
-                `//MYJOB   JOB (ACCT),'DESC',CLASS=A,MSGCLASS=X\n` +
-                `//STEP01  EXEC PGM=IEFBR14\n` +
-                `\`\`\`\n`
+                this.t(
+                    `⚠️ Le JCL fourni semble incomplet. Un JCL valide doit contenir au minimum une carte JOB (\`//jobname JOB ...\`).\n\nExemple minimal :\n\`\`\`jcl\n//MYJOB   JOB (ACCT),'DESC',CLASS=A,MSGCLASS=X\n//STEP01  EXEC PGM=IEFBR14\n\`\`\`\n`,
+                    `⚠️ The provided JCL seems incomplete. A valid JCL must include at least a JOB card (\`//jobname JOB ...\`).\n\nMinimal example:\n\`\`\`jcl\n//MYJOB   JOB (ACCT),'DESC',CLASS=A,MSGCLASS=X\n//STEP01  EXEC PGM=IEFBR14\n\`\`\`\n`
+                )
             );
             return [];
         }
 
-        stream.progress('Soumission du JCL inline...');
+        stream.progress(this.t('Soumission du JCL inline...', 'Submitting inline JCL...'));
 
         const job: IJob = await SubmitJobs.submitJcl(session, jcl);
 
@@ -176,9 +181,9 @@ export class RunHandler {
         const preview = lines.slice(0, 10).join('\n');
         const truncated = lines.length > 10;
 
-        stream.markdown(`### JCL soumis\n\n`);
+        stream.markdown(`### ${this.t('JCL soumis', 'Submitted JCL')}\n\n`);
         stream.markdown(
-            `\`\`\`jcl\n${preview}${truncated ? '\n... (' + lines.length + ' lignes)' : ''}\n\`\`\`\n\n`
+            `\`\`\`jcl\n${preview}${truncated ? `\n... (${lines.length} ${this.t('lignes', 'lines')})` : ''}\n\`\`\`\n\n`
         );
 
         return this.displaySubmitResult(job, 'JCL inline', stream);
@@ -202,8 +207,8 @@ export class RunHandler {
         const job: IJob = await SubmitJobs.submitJob(session, fullName);
 
         stream.markdown(
-            `🚀 **Job soumis** — \`${job.jobname}\` (\`${job.jobid}\`)\n\n` +
-            `Source : \`${fullName}\`\n\n`
+            `🚀 **${this.t('Job soumis', 'Job submitted')}** — \`${job.jobname}\` (\`${job.jobid}\`)\n\n` +
+            `${this.t('Source', 'Source')} : \`${fullName}\`\n\n`
         );
 
         return this.monitorSubmittedJob(session, job, autoDisplay, stream, token);
@@ -219,7 +224,7 @@ export class RunHandler {
         stream: vscode.ChatResponseStream,
         token: vscode.CancellationToken
     ): Promise<ZosFollowup[]> {
-        stream.markdown(`---\n\n### ⏳ Surveillance en cours...\n\n`);
+        stream.markdown(`---\n\n### ⏳ ${this.t('Surveillance en cours...', 'Monitoring...')}\n\n`);
 
         const MAX_WAIT_MS = 10 * 60 * 1000;
         const POLL_INTERVAL_MS = 5000;
@@ -232,8 +237,10 @@ export class RunHandler {
 
             if (elapsed > MAX_WAIT_MS) {
                 stream.markdown(
-                    `\n⏰ **Timeout** — Le job est toujours en cours après 10 minutes.\n` +
-                    `Vérifiez avec \`/jobs statut de ${job.jobid}\``
+                    this.t(
+                        `\n⏰ **Timeout** — Le job est toujours en cours après 10 minutes.\nVérifiez avec \`/jobs statut de ${job.jobid}\``,
+                        `\n⏰ **Timeout** — The job is still running after 10 minutes.\nCheck with \`/jobs status of ${job.jobid}\``
+                    )
                 );
                 return [];
             }
@@ -262,7 +269,7 @@ export class RunHandler {
         }
 
         if (token.isCancellationRequested) {
-            stream.markdown('\n❌ Surveillance annulée.');
+            stream.markdown(this.t('\n❌ Surveillance annulée.', '\n❌ Monitoring cancelled.'));
             return [];
         }
 
@@ -274,22 +281,24 @@ export class RunHandler {
         const isError = completedJob.retcode != null && !completedJob.retcode.startsWith('CC 0000');
 
         stream.markdown(
-            `\n${emoji} **Job terminé** — \`${completedJob.jobname}\` (\`${completedJob.jobid}\`) ` +
-            `→ **${rc}** en ${elapsed_s}s\n\n`
+            `\n${emoji} **${this.t('Job terminé', 'Job completed')}** — \`${completedJob.jobname}\` (\`${completedJob.jobid}\`) ` +
+            `→ **${rc}** ${this.t('en', 'in')} ${elapsed_s}s\n\n`
         );
 
         if (autoDisplay) {
             await this.displayJobSpool(session, completedJob, isError, stream);
         } else if (isError) {
             stream.markdown(
-                `⚠️ Le job a terminé en erreur. ` +
-                `\`/jobs montre le JESMSGLG de ${completedJob.jobid}\` pour diagnostiquer.\n`
+                this.t(
+                    `⚠️ Le job a terminé en erreur. \`/jobs montre le JESMSGLG de ${completedJob.jobid}\` pour diagnostiquer.\n`,
+                    `⚠️ The job ended with an error. \`/jobs show JESMSGLG of ${completedJob.jobid}\` to diagnose.\n`
+                )
             );
         }
 
         return [
-            followup(`🔍 Statut de ${completedJob.jobid}`, `statut de ${completedJob.jobid}`, 'jobs'),
-            followup(`📜 Spool de ${completedJob.jobid}`, `montre la sortie de ${completedJob.jobid}`, 'jobs'),
+            followup(this.t(`🔍 Statut de ${completedJob.jobid}`, `🔍 Status of ${completedJob.jobid}`), this.t(`statut de ${completedJob.jobid}`, `status of ${completedJob.jobid}`), 'jobs'),
+            followup(this.t(`📜 Spool de ${completedJob.jobid}`, `📜 Spool of ${completedJob.jobid}`), this.t(`montre la sortie de ${completedJob.jobid}`, `show output of ${completedJob.jobid}`), 'jobs'),
         ];
     }
 
@@ -307,23 +316,25 @@ export class RunHandler {
 
         if (!originalJob) {
             if (intent.jobId) {
-                stream.markdown(`Job \`${intent.jobId}\` non trouvé.`);
+                stream.markdown(this.t(`Job \`${intent.jobId}\` non trouvé.`, `Job \`${intent.jobId}\` not found.`));
             } else {
-                stream.markdown(`Aucun job récent trouvé pour \`${intent.jobName}\`.`);
+                stream.markdown(this.t(`Aucun job récent trouvé pour \`${intent.jobName}\`.`, `No recent job found for \`${intent.jobName}\`.`));
             }
             return [];
         }
 
         // Récupérer le JCL original depuis le spool (JESJCL)
-        stream.progress(`Récupération du JCL de ${originalJob.jobid}...`);
+        stream.progress(this.t(`Récupération du JCL de ${originalJob.jobid}...`, `Fetching JCL of ${originalJob.jobid}...`));
 
         const spoolFiles = await GetJobs.getSpoolFilesForJob(session, originalJob);
         const jesjcl = spoolFiles.find(sf => sf.ddname === 'JESJCL');
 
         if (!jesjcl) {
             stream.markdown(
-                `⚠️ Impossible de trouver le JESJCL du job \`${originalJob.jobid}\`.\n` +
-                `Le spool a peut-être été purgé.`
+                this.t(
+                    `⚠️ Impossible de trouver le JESJCL du job \`${originalJob.jobid}\`.\nLe spool a peut-être été purgé.`,
+                    `⚠️ Unable to find JESJCL for job \`${originalJob.jobid}\`.\nThe spool may have been purged.`
+                )
             );
             return [];
         }
@@ -336,7 +347,7 @@ export class RunHandler {
         );
 
         if (!jclContent || jclContent.trim().length === 0) {
-            stream.markdown(`⚠️ Le JESJCL de \`${originalJob.jobid}\` est vide.`);
+            stream.markdown(this.t(`⚠️ Le JESJCL de \`${originalJob.jobid}\` est vide.`, `⚠️ The JESJCL of \`${originalJob.jobid}\` is empty.`));
             return [];
         }
 
@@ -346,24 +357,23 @@ export class RunHandler {
         // Afficher un aperçu
         const previewLines = cleanedJcl.split('\n').slice(0, 8);
         stream.markdown(
-            `### Re-soumission de \`${originalJob.jobname}\` (\`${originalJob.jobid}\`)\n\n` +
-            `JCL original (aperçu) :\n` +
+            `### ${this.t(`Re-soumission de \`${originalJob.jobname}\` (\`${originalJob.jobid}\`)`, `Resubmission of \`${originalJob.jobname}\` (\`${originalJob.jobid}\`)`)}\n\n` +
+            `${this.t('JCL original (aperçu) :', 'Original JCL (preview):')}\n` +
             `\`\`\`jcl\n${previewLines.join('\n')}\n...\n\`\`\`\n\n`
         );
 
-        // Soumettre
-        stream.progress('Soumission...');
+        stream.progress(this.t('Soumission...', 'Submitting...'));
         const newJob: IJob = await SubmitJobs.submitJcl(session, cleanedJcl);
 
         stream.markdown(
-            `🚀 **Nouveau job soumis** — \`${newJob.jobname}\` (\`${newJob.jobid}\`)\n\n` +
-            `Re-soumission du JCL de \`${originalJob.jobid}\`\n\n` +
-            `| | Job original | Nouveau job |\n` +
+            `🚀 **${this.t('Nouveau job soumis', 'New job submitted')}** — \`${newJob.jobname}\` (\`${newJob.jobid}\`)\n\n` +
+            this.t(`Re-soumission du JCL de \`${originalJob.jobid}\``, `Resubmission of JCL from \`${originalJob.jobid}\``) + `\n\n` +
+            `| | ${this.t('Job original', 'Original job')} | ${this.t('Nouveau job', 'New job')} |\n` +
             `|---|---|---|\n` +
             `| Job ID | \`${originalJob.jobid}\` | \`${newJob.jobid}\` |\n` +
             `| Job Name | \`${originalJob.jobname}\` | \`${newJob.jobname}\` |\n` +
-            `| RC original | ${this.formatReturnCode(originalJob)} | *(en cours)* |\n\n` +
-            `💡 \`/jobs surveille ${newJob.jobid} ${newJob.jobname}\` pour suivre l'exécution.\n`
+            `| ${this.t('RC original', 'Original RC')} | ${this.formatReturnCode(originalJob)} | *(${this.t('en cours', 'in progress')})* |\n\n` +
+            this.t(`💡 \`/jobs surveille ${newJob.jobid} ${newJob.jobname}\` pour suivre l'exécution.\n`, `💡 \`/jobs monitor ${newJob.jobid} ${newJob.jobname}\` to track execution.\n`)
         );
     }
 
@@ -380,7 +390,7 @@ export class RunHandler {
             const spoolFiles = await GetJobs.getSpoolFilesForJob(session, job);
 
             if (spoolFiles.length === 0) {
-                stream.markdown(`*Aucun spool file disponible.*`);
+                stream.markdown(`*${this.t('Aucun spool file disponible.', 'No spool file available.')}*`);
                 return [];
             }
 
@@ -416,16 +426,16 @@ export class RunHandler {
             // Lister les non-affichés
             const remaining = spoolFiles.filter(sf => !displayed.has(sf.id));
             if (remaining.length > 0) {
-                stream.markdown(`\n**Autres spool files :** `);
+                stream.markdown(`\n**${this.t('Autres spool files', 'Other spool files')} :** `);
                 stream.markdown(
                     remaining.map(sf => `\`${sf.ddname}\``).join(', ') + `\n\n`
                 );
                 stream.markdown(
-                    `💡 \`/jobs affiche le <DDNAME> de ${job.jobid}\` pour voir le contenu.\n`
+                    this.t(`💡 \`/jobs affiche le <DDNAME> de ${job.jobid}\` pour voir le contenu.\n`, `💡 \`/jobs show <DDNAME> of ${job.jobid}\` to view content.\n`)
                 );
             }
         } catch (error) {
-            stream.markdown(`\n⚠️ Impossible de récupérer le spool : ${(error as any)?.message}`);
+            stream.markdown(`\n⚠️ ${this.t('Impossible de récupérer le spool', 'Unable to retrieve spool')} : ${(error as any)?.message}`);
         }
     }
 
@@ -454,27 +464,25 @@ export class RunHandler {
             const stepInfo = spoolFile.stepname ? ` / ${spoolFile.stepname}` : '';
             const lineCount = lines.length;
 
-            stream.markdown(`\n#### 📄 \`${spoolFile.ddname}\`${stepInfo} — ${lineCount} lignes\n\n`);
+            stream.markdown(`\n#### 📄 \`${spoolFile.ddname}\`${stepInfo} — ${lineCount} ${this.t('lignes', 'lines')}\n\n`);
 
             // Troncature intelligente
             if (lineCount <= 100) {
                 stream.markdown(`\`\`\`\n${content}\n\`\`\`\n`);
             } else if (spoolFile.ddname === 'JESMSGLG' || spoolFile.ddname === 'JESYSMSG') {
-                // Pour les messages système : garder les dernières lignes (erreurs en fin)
                 const tail = lines.slice(-80).join('\n');
                 stream.markdown(
-                    `\`\`\`\n... (${lineCount - 80} lignes masquées)\n\n${tail}\n\`\`\`\n`
+                    `\`\`\`\n... (${lineCount - 80} ${this.t('lignes masquées', 'hidden lines')})\n\n${tail}\n\`\`\`\n`
                 );
             } else {
-                // Pour les autres : début + fin
                 const head = lines.slice(0, 40).join('\n');
                 const tail = lines.slice(-40).join('\n');
                 stream.markdown(
-                    `\`\`\`\n${head}\n\n... (${lineCount - 80} lignes masquées)\n\n${tail}\n\`\`\`\n`
+                    `\`\`\`\n${head}\n\n... (${lineCount - 80} ${this.t('lignes masquées', 'hidden lines')})\n\n${tail}\n\`\`\`\n`
                 );
             }
         } catch {
-            stream.markdown(`\n**${spoolFile.ddname}** — ⚠️ Lecture impossible.\n`);
+            stream.markdown(`\n**${spoolFile.ddname}** — ⚠️ ${this.t('Lecture impossible.', 'Unable to read.')}\n`);
         }
     }
 
@@ -491,21 +499,21 @@ export class RunHandler {
         stream: vscode.ChatResponseStream
     ): ZosFollowup[] {
         stream.markdown(
-            `🚀 **Job soumis** — \`${job.jobname}\` (\`${job.jobid}\`)\n\n` +
-            `| Propriété | Valeur |\n` +
+            `🚀 **${this.t('Job soumis', 'Job submitted')}** — \`${job.jobname}\` (\`${job.jobid}\`)\n\n` +
+            `| ${this.t('Propriété', 'Property')} | ${this.t('Valeur', 'Value')} |\n` +
             `|-----------|--------|\n` +
-            `| Source | \`${source}\` |\n` +
+            `| ${this.t('Source', 'Source')} | \`${source}\` |\n` +
             `| Job Name | \`${job.jobname}\` |\n` +
             `| Job ID | \`${job.jobid}\` |\n` +
             `| Owner | \`${job.owner ?? '-'}\` |\n` +
-            `| Classe | \`${job.class ?? '-'}\` |\n` +
-            `| Statut | ${this.getStatusEmoji(job.status, null)} ${job.status ?? 'INPUT'} |\n`
+            `| ${this.t('Classe', 'Class')} | \`${job.class ?? '-'}\` |\n` +
+            `| ${this.t('Statut', 'Status')} | ${this.getStatusEmoji(job.status, null)} ${job.status ?? 'INPUT'} |\n`
         );
 
         return [
-            followup(`⏳ Surveiller ${job.jobid}`, `surveille ${job.jobid} ${job.jobname}`, 'jobs'),
-            followup(`🔍 Statut de ${job.jobid}`, `statut de ${job.jobid}`, 'jobs'),
-            followup(`📜 Spool de ${job.jobid}`, `montre la sortie de ${job.jobid}`, 'jobs'),
+            followup(this.t(`⏳ Surveiller ${job.jobid}`, `⏳ Monitor ${job.jobid}`), this.t(`surveille ${job.jobid} ${job.jobname}`, `monitor ${job.jobid} ${job.jobname}`), 'jobs'),
+            followup(this.t(`🔍 Statut de ${job.jobid}`, `🔍 Status of ${job.jobid}`), this.t(`statut de ${job.jobid}`, `status of ${job.jobid}`), 'jobs'),
+            followup(this.t(`📜 Spool de ${job.jobid}`, `📜 Spool of ${job.jobid}`), this.t(`montre la sortie de ${job.jobid}`, `show output of ${job.jobid}`), 'jobs'),
         ];
     }
 
@@ -587,14 +595,14 @@ export class RunHandler {
         if (!jcl) { return []; }
 
         const fileName = path.basename(localPath);
-        stream.progress(`Submitting ${fileName}...`);
+        stream.progress(this.t(`Soumission de ${fileName}...`, `Submitting ${fileName}...`));
         const job: IJob = await SubmitJobs.submitJcl(session, jcl);
 
         const lines = jcl.split('\n');
         const preview = lines.slice(0, 10).join('\n');
         stream.markdown(
-            `### Submitted JCL — \`${fileName}\`\n\n` +
-            `\`\`\`jcl\n${preview}${lines.length > 10 ? `\n... (${lines.length} lines total)` : ''}\n\`\`\`\n\n`
+            `### ${this.t(`JCL soumis — \`${fileName}\``, `Submitted JCL — \`${fileName}\``)}\n\n` +
+            `\`\`\`jcl\n${preview}${lines.length > 10 ? `\n... (${lines.length} ${this.t('lignes au total', 'lines total')})` : ''}\n\`\`\`\n\n`
         );
 
         return this.displaySubmitResult(job, fileName, stream);
@@ -614,12 +622,12 @@ export class RunHandler {
         if (!jcl) { return []; }
 
         const fileName = path.basename(localPath);
-        stream.progress(`Submitting ${fileName}...`);
+        stream.progress(this.t(`Soumission de ${fileName}...`, `Submitting ${fileName}...`));
         const job: IJob = await SubmitJobs.submitJcl(session, jcl);
 
         stream.markdown(
-            `🚀 **Job submitted** — \`${job.jobname}\` (\`${job.jobid}\`)\n\n` +
-            `Source: \`${fileName}\`\n\n`
+            `🚀 **${this.t('Job soumis', 'Job submitted')}** — \`${job.jobname}\` (\`${job.jobid}\`)\n\n` +
+            `${this.t('Source', 'Source')}: \`${fileName}\`\n\n`
         );
 
         return this.monitorSubmittedJob(session, job, autoDisplay, stream, token);
@@ -633,7 +641,7 @@ export class RunHandler {
         const filePath = this.resolveLocalPath(localPath);
 
         if (!fs.existsSync(filePath)) {
-            stream.markdown(`❌ File not found: \`${filePath}\``);
+            stream.markdown(this.t(`❌ Fichier introuvable : \`${filePath}\``, `❌ File not found: \`${filePath}\``));
             return null;
         }
 
@@ -641,8 +649,10 @@ export class RunHandler {
 
         if (!jcl.includes('//') || !jcl.includes(' JOB ')) {
             stream.markdown(
-                `⚠️ \`${path.basename(filePath)}\` does not appear to contain valid JCL.\n\n` +
-                `A valid JCL must include at least a JOB card (\`//jobname JOB ...\`).`
+                this.t(
+                    `⚠️ \`${path.basename(filePath)}\` ne semble pas contenir de JCL valide.\n\nUn JCL valide doit contenir au minimum une carte JOB (\`//jobname JOB ...\`).`,
+                    `⚠️ \`${path.basename(filePath)}\` does not appear to contain valid JCL.\n\nA valid JCL must include at least a JOB card (\`//jobname JOB ...\`).`
+                )
             );
             return null;
         }
@@ -680,31 +690,27 @@ export class RunHandler {
     private describeRunOperation(intent: RunIntent): string {
         switch (intent.type) {
             case 'SUBMIT_DATASET': {
-                const fullName = intent.member
-                    ? `${intent.dataset}(${intent.member})`
-                    : intent.dataset;
-                return `Soumission du JCL \`${fullName}\``;
+                const fullName = intent.member ? `${intent.dataset}(${intent.member})` : intent.dataset;
+                return this.t(`Soumission du JCL \`${fullName}\``, `Submit JCL \`${fullName}\``);
             }
             case 'SUBMIT_INLINE':
-                return `Soumission de JCL inline`;
+                return this.t('Soumission de JCL inline', 'Submit inline JCL');
             case 'SUBMIT_AND_MONITOR': {
-                const fullName = intent.member
-                    ? `${intent.dataset}(${intent.member})`
-                    : intent.dataset;
-                return `Soumission et surveillance de \`${fullName}\``;
+                const fullName = intent.member ? `${intent.dataset}(${intent.member})` : intent.dataset;
+                return this.t(`Soumission et surveillance de \`${fullName}\``, `Submit and monitor \`${fullName}\``);
             }
             case 'RESUBMIT':
-                return `Re-soumission du JCL de ${intent.jobId ?? intent.jobName ?? '?'}`;
+                return this.t(`Re-soumission du JCL de ${intent.jobId ?? intent.jobName ?? '?'}`, `Resubmit JCL of ${intent.jobId ?? intent.jobName ?? '?'}`);
             case 'SUBMIT_LOCAL_FILE':
-                return `Submit local JCL file \`${intent.localPath}\``;
+                return this.t(`Soumission du fichier JCL local \`${intent.localPath}\``, `Submit local JCL file \`${intent.localPath}\``);
             case 'SUBMIT_LOCAL_FILE_AND_MONITOR':
-                return `Submit and monitor local JCL file \`${intent.localPath}\``;
+                return this.t(`Soumission et surveillance du fichier JCL local \`${intent.localPath}\``, `Submit and monitor local JCL file \`${intent.localPath}\``);
         }
     }
 
     private formatReturnCode(job: IJob): string {
         if (!job.retcode) {
-            return job.status === 'ACTIVE' ? '*(en cours)*' : '-';
+            return job.status === 'ACTIVE' ? `*(${this.t('en cours', 'in progress')})*` : '-';
         }
         return `\`${job.retcode}\``;
     }
