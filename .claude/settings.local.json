@@ -6,7 +6,8 @@
       "Bash(CI=true pnpm install)",
       "WebFetch(domain:docs.zowe.org)",
       "Bash(npx tsc --noEmit)",
-      "WebFetch(domain:raw.githubusercontent.com)"
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(ls -lah /c/Users/jmhoc/git/005-LMTools/zLMTools/src/**/*.ts)"
     ]
   }
 }

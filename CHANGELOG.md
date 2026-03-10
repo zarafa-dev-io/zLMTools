@@ -6,6 +6,27 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and
 
 ---
 
+## [0.6.0] - 2026-03-10
+
+### Added
+
+#### Automatic response language detection
+
+- All responses are now automatically delivered in the **same language as the user's prompt** — French or English, detected per request with no configuration required
+- Language detection uses a lightweight heuristic (no extra LLM call): French accented characters count double, common FR/EN keywords are scored, default falls back to French
+- New utility module `src/utils/i18n.ts`:
+  - `detectLanguage(prompt): Lang` — returns `'fr'` or `'en'`
+  - `tr(fr, en, lang)` — inline translation helper used in `participant.ts`
+- Each handler (`DatasetsHandler`, `JobsHandler`, `RunHandler`) exposes a private `t(fr, en)` shorthand method and detects language once at the start of `handle()`
+- **Full coverage** across all three handlers and `participant.ts`:
+  - Progress messages (`stream.progress`)
+  - Markdown responses — headers, tables, status messages, error messages
+  - Clickable followup button labels and their prompt text
+  - VS Code button titles
+  - Free-form help message and default followups
+
+---
+
 ## [0.5.0] - 2026-03-09
 
 ### Changed

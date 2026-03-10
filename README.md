@@ -6,7 +6,18 @@
 
 > Talk to your mainframe in natural language — directly from GitHub Copilot Chat.
 
-**z/OS Assistant** is a VS Code Chat Participant that bridges GitHub Copilot and z/OS via the Zowe SDK. Manage datasets, monitor jobs, submit JCL — all through conversational commands, in plain English or French.
+**z/OS Assistant** is a VS Code Chat Participant that bridges GitHub Copilot and z/OS via the Zowe SDK. Manage datasets, monitor jobs, submit JCL — all through conversational commands, in plain **English** or **French**.
+
+> 🌐 **Automatic language detection** — responses are automatically delivered in the language of your prompt. No configuration required. Just write naturally in English or French and the assistant responds in kind.
+
+---
+
+## Documentation
+
+| Language | Guide |
+|---|---|
+| 🇬🇧 English | [User Guide](https://github.com/zarafa-dev-io/zLMTools/blob/main/docs/USER_GUIDE.md) |
+| 🇫🇷 Français | [Guide Utilisateur](https://github.com/zarafa-dev-io/zLMTools/blob/main/docs/GUIDE_UTILISATEUR.md) |
 
 ---
 
@@ -197,7 +208,6 @@ To disable telemetry, set `zosAssistant.telemetryEnabled` to `false` in settings
 
 - [ ] `/tso` — TSO and console commands
 - [ ] `/uss` — USS filesystem operations
-- [ ] Multi-profile support (switch between LPAR environments)
 - [ ] Copilot instruction file for enhanced COBOL assistance
 - [ ] Dataset content caching for faster repeated reads
 
@@ -206,7 +216,6 @@ To disable telemetry, set `zosAssistant.telemetryEnabled` to `false` in settings
 ## Known Issues
 
 - `/tso` and `/uss` commands are not yet implemented (placeholders)
-- Multi-LPAR profile switching is in progress
 
 Report issues at [github.com/zarafa-dev-io/zLMTools/issues](https://github.com/zarafa-dev-io/zLMTools/issues).
 
