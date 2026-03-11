@@ -80,7 +80,6 @@ export class JobsHandler {
                 followup(this.t('📋 Lister mes jobs', '📋 List my jobs'), this.t('liste mes jobs', 'list my jobs'), 'jobs'),
                 followup(this.t('🔄 Jobs actifs', '🔄 Active jobs'), this.t('liste les jobs actifs', 'list active jobs'), 'jobs'),
             ]);
-            return [];
         }
 
         // ── Step 2 : Sécurité ──
@@ -263,8 +262,8 @@ export class JobsHandler {
                 stream.markdown(`|---------|------|----------|--------|--------|\n`);
 
                 for (const sf of spoolFiles) {
-                    const size = sf.byteCount !== undefined
-                        ? this.formatBytes(sf.byteCount)
+                    const size = sf["byte-count"] !== undefined
+                        ? this.formatBytes(sf["byte-count"])
                         : '-';
                     stream.markdown(
                         `| \`${sf.ddname}\` ` +
@@ -370,8 +369,8 @@ export class JobsHandler {
             stream.markdown(`|---------|------|--------|\n`);
 
             for (const sf of remaining) {
-                const size = sf.byteCount !== undefined
-                    ? this.formatBytes(sf.byteCount)
+                const size = sf["byte-count"] !== undefined
+                    ? this.formatBytes(sf["byte-count"])
                     : '-';
                 stream.markdown(
                     `| \`${sf.ddname}\` | ${sf.stepname ?? '-'} | ${size} |\n`
@@ -434,6 +433,7 @@ export class JobsHandler {
         for (const sf of target) {
             await this.displaySpoolContent(session, job, sf, stream);
         }
+        return [];
     }
 
     // ================================================================
@@ -602,6 +602,7 @@ export class JobsHandler {
         }
 
         stream.markdown(this.t('\n❌ Surveillance annulée par l\'utilisateur.', '\n❌ Monitoring cancelled by user.'));
+        return [];
     }
 
     // ================================================================
@@ -672,8 +673,8 @@ export class JobsHandler {
                 : content;
 
             const stepInfo = spoolFile.stepname ? ` / ${spoolFile.stepname}` : '';
-            const sizeInfo = spoolFile.byteCount
-                ? ` — ${this.formatBytes(spoolFile.byteCount)}`
+            const sizeInfo = spoolFile["byte-count"]
+                ? ` — ${this.formatBytes(spoolFile["byte-count"])}`
                 : '';
 
             stream.markdown(
@@ -685,6 +686,7 @@ export class JobsHandler {
                 `\n**${spoolFile.ddname}** — ⚠️ ${this.t('Impossible de lire le contenu.', 'Unable to read content.')}\n`
             );
         }
+        return [];
     }
 
     /**

@@ -11,10 +11,22 @@ export const window = {
     showWarningMessage: jest.fn(),
     showInformationMessage: jest.fn(),
     showErrorMessage: jest.fn(),
+    setStatusBarMessage: jest.fn(),
+    showQuickPick: jest.fn(),
+    showTextDocument: jest.fn().mockResolvedValue(undefined),
+    createStatusBarItem: jest.fn(() => ({
+        text: '',
+        tooltip: '',
+        command: '',
+        show: jest.fn(),
+        hide: jest.fn(),
+        dispose: jest.fn(),
+    })),
 };
 
 export const workspace = {
     findFiles: jest.fn().mockResolvedValue([]),
+    openTextDocument: jest.fn().mockResolvedValue({ uri: {} }),
     fs: {
         readFile: jest.fn(),
     },
@@ -22,11 +34,22 @@ export const workspace = {
         get: jest.fn(),
         update: jest.fn(),
     })),
+    workspaceFolders: undefined as any,
 };
 
 export const extensions = {
     getExtension: jest.fn(),
 };
+
+export const commands = {
+    registerCommand: jest.fn(),
+    executeCommand: jest.fn(),
+};
+
+export enum StatusBarAlignment {
+    Left = 1,
+    Right = 2,
+}
 
 export const chat = {
     createChatParticipant: jest.fn(() => ({
@@ -37,7 +60,20 @@ export const chat = {
 
 export const lm = {
     selectChatModels: jest.fn().mockResolvedValue([]),
+    registerTool: jest.fn(() => ({ dispose: jest.fn() })),
 };
+
+export class LanguageModelToolResult {
+    constructor(public content: any[]) {}
+}
+
+export class LanguageModelTextPart {
+    constructor(public value: string) {}
+}
+
+export class MarkdownString {
+    constructor(public value: string) {}
+}
 
 export class ThemeIcon {
     constructor(public id: string) {}

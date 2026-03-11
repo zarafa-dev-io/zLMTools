@@ -151,6 +151,18 @@ export function activate(context: vscode.ExtensionContext) {
             vscode.window.showInformationMessage('z/OS: Cache des sessions vidé.');
         })
     );
+
+    // ── Commande rapport de télémétrie ──
+    context.subscriptions.push(
+        vscode.commands.registerCommand('zos.telemetryReport', async () => {
+            const report = await telemetry.generateReport();
+            const doc = await vscode.workspace.openTextDocument({
+                content: report,
+                language: 'markdown',
+            });
+            await vscode.window.showTextDocument(doc, { preview: true });
+        })
+    );
 }
 
 function handleFreeForm(

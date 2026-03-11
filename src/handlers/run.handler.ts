@@ -143,7 +143,7 @@ export class RunHandler {
         dataset: string,
         member: string | undefined,
         stream: vscode.ChatResponseStream
-    ): Promise<ZosChatResult> {
+    ): Promise<ZosFollowup[]> {
         const fullName = member ? `${dataset}(${member})` : dataset;
 
         stream.progress(this.t(`Soumission de ${fullName}...`, `Submitting ${fullName}...`));
@@ -160,7 +160,7 @@ export class RunHandler {
         session: any,
         jcl: string,
         stream: vscode.ChatResponseStream
-    ): Promise<ZosChatResult> {
+    ): Promise<ZosFollowup[]> {
         // Valider le JCL minimal
         if (!jcl.includes('//') || !jcl.includes(' JOB ')) {
             stream.markdown(
@@ -199,7 +199,7 @@ export class RunHandler {
         autoDisplay: boolean,
         stream: vscode.ChatResponseStream,
         token: vscode.CancellationToken
-    ): Promise<ZosChatResult> {
+    ): Promise<ZosFollowup[]> {
         const fullName = member ? `${dataset}(${member})` : dataset;
 
         // Phase 1 : Soumission
@@ -310,7 +310,7 @@ export class RunHandler {
         intent: { jobId?: string; jobName?: string },
         stream: vscode.ChatResponseStream,
         token: vscode.CancellationToken
-    ): Promise<ZosChatResult> {
+    ): Promise<ZosFollowup[]> {
         // Résoudre le job original
         const originalJob = await this.resolveJob(session, intent);
 
@@ -375,6 +375,11 @@ export class RunHandler {
             `| ${this.t('RC original', 'Original RC')} | ${this.formatReturnCode(originalJob)} | *(${this.t('en cours', 'in progress')})* |\n\n` +
             this.t(`💡 \`/jobs surveille ${newJob.jobid} ${newJob.jobname}\` pour suivre l'exécution.\n`, `💡 \`/jobs monitor ${newJob.jobid} ${newJob.jobname}\` to track execution.\n`)
         );
+
+        return [
+            followup(this.t(`🔍 Statut de ${newJob.jobid}`, `🔍 Status of ${newJob.jobid}`), this.t(`statut de ${newJob.jobid}`, `status of ${newJob.jobid}`), 'jobs'),
+            followup(this.t(`📜 Spool de ${newJob.jobid}`, `📜 Spool of ${newJob.jobid}`), this.t(`montre la sortie de ${newJob.jobid}`, `show output of ${newJob.jobid}`), 'jobs'),
+        ];
     }
 
     // ================================================================
@@ -385,13 +390,13 @@ export class RunHandler {
         job: IJob,
         isError: boolean,
         stream: vscode.ChatResponseStream
-    ): Promise<ZosChatResult> {
+    ): Promise<void> {
         try {
             const spoolFiles = await GetJobs.getSpoolFilesForJob(session, job);
 
             if (spoolFiles.length === 0) {
                 stream.markdown(`*${this.t('Aucun spool file disponible.', 'No spool file available.')}*`);
-                return [];
+                return;
             }
 
             stream.markdown(`---\n\n### 📜 Spool\n\n`);
@@ -447,7 +452,7 @@ export class RunHandler {
         job: IJob,
         spoolFile: IJobFile,
         stream: vscode.ChatResponseStream
-    ): Promise<ZosChatResult> {
+    ): Promise<void> {
         try {
             const content = await GetJobs.getSpoolContentById(
                 session,
