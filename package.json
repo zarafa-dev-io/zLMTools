@@ -40,14 +40,14 @@
         "chatParticipants": [
             {
                 "id": "zdevops.zos",
-                "fullName": "z/OS Assistant",
+                "fullName": "z/OS Assistant for Copilot",
                 "name": "zos",
                 "description": "Interact with z/OS via Zowe: datasets, jobs, JCL submission, TSO, USS",
                 "isSticky": true,
                 "commands": [
                     {
                         "name": "ds",
-                        "description": "Datasets & PDS members: list, read, write, search, delete, download, upload"
+                        "description": "Datasets & PDS members: list, read, write, search, delete, create, download, upload"
                     },
                     {
                         "name": "jobs",
@@ -357,7 +357,7 @@
                 "name": "zos_createDataset",
                 "toolReferenceName": "zos_createDataset",
                 "displayName": "z/OS: Create Dataset",
-                "modelDescription": "Create a new z/OS dataset. Two modes: (1) type preset — use dstype (PARTITIONED, SEQUENTIAL, CLASSIC, BINARY, C) with optional attribute overrides; (2) allocate like — use likeDataset to copy attributes from an existing dataset. Attribute defaults from VS Code settings (zosAssistant.createDefaults.*). dstype and likeDataset are mutually exclusive.",
+                "modelDescription": "Create a new z/OS dataset. Two modes: (1) type preset — use dstype (PARTITIONED, SEQUENTIAL, CLASSIC, BINARY, C) with optional attribute overrides; (2) allocate like — use likeDataset to copy attributes from an existing dataset. Partitioned datasets are created as PDSE (DSNTYPE=LIBRARY) by default — use dsntype=PDS to force a classic PDS. Attribute defaults from VS Code settings (zosAssistant.createDefaults.*). dstype and likeDataset are mutually exclusive.",
                 "canBeReferencedInPrompt": true,
                 "icon": "$(database)",
                 "inputSchema": {
@@ -366,6 +366,7 @@
                         "name":        { "type": "string", "description": "Fully qualified dataset name to create (e.g. HLQ.COBOL.SRC)" },
                         "dstype":      { "type": "string", "enum": ["PARTITIONED", "SEQUENTIAL", "CLASSIC", "BINARY", "C"], "description": "Dataset type preset. Mutually exclusive with likeDataset." },
                         "likeDataset": { "type": "string", "description": "Allocate like an existing dataset — copies all its attributes. Mutually exclusive with dstype." },
+                        "dsntype":   { "type": "string", "enum": ["LIBRARY", "PDS"], "description": "Partitioned dataset format: LIBRARY = PDSE (default, recommended — dynamic directory, no compression needed), PDS = classic PDS." },
                         "lrecl":     { "type": "number", "description": "Logical record length (overrides setting default)" },
                         "blksize":   { "type": "number", "description": "Block size (overrides setting default; 0 = z/OS-determined)" },
                         "recfm":     { "type": "string", "description": "Record format: FB, VB, F, V, U, FBA, VBA (PARTITIONED/SEQUENTIAL only; overrides setting default)" },
@@ -630,6 +631,12 @@
                     "type": "string",
                     "default": "",
                     "description": "Default SMS data class for dataset creation"
+                },
+                "zosAssistant.createDefaults.dsntype": {
+                    "type": "string",
+                    "enum": ["LIBRARY", "PDS"],
+                    "default": "LIBRARY",
+                    "description": "Default partitioned dataset format: LIBRARY = PDSE (recommended — dynamic directory, no compression), PDS = classic PDS"
                 }
             }
         }
