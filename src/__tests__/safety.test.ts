@@ -1,3 +1,4 @@
+import * as vscode from 'vscode';
 import { INTENT_SAFETY } from '../intents/ds.schemas';
 import { JOBS_INTENT_SAFETY } from '../intents/jobs.schemas';
 import { RUN_INTENT_SAFETY } from '../intents/run.schemas';
@@ -5,6 +6,7 @@ import {
     isProtectedDataset,
     getEffectiveSafetyLevel,
     describeOperation,
+    requestConfirmation,
 } from '../zowe/safety';
 
 // ============================================================
@@ -76,6 +78,131 @@ describe('describeOperation', () => {
         });
         expect(desc).toContain('HLQ.OLD.DATA');
         expect(desc).toContain('IRRÉVERSIBLE');
+    });
+
+    it('should describe WRITE_MEMBER', () => {
+        const desc = describeOperation('WRITE_MEMBER', {
+            dataset: 'HLQ.COBOL.SRC',
+            member: 'MYPGM',
+        });
+        expect(desc).toContain('HLQ.COBOL.SRC');
+        expect(desc).toContain('MYPGM');
+    });
+
+    it('should describe CREATE_DATASET', () => {
+        const desc = describeOperation('CREATE_DATASET', {
+            name: 'HLQ.NEW.DATA',
+            dsorg: 'PO',
+        });
+        expect(desc).toContain('HLQ.NEW.DATA');
+        expect(desc).toContain('PO');
+    });
+
+    it('should describe CREATE_MEMBER', () => {
+        const desc = describeOperation('CREATE_MEMBER', {
+            dataset: 'HLQ.COBOL.SRC',
+            member: 'NEWPGM',
+        });
+        expect(desc).toContain('HLQ.COBOL.SRC');
+        expect(desc).toContain('NEWPGM');
+    });
+
+    it('should describe unknown intent using dataset fallback', () => {
+        const desc = describeOperation('UNKNOWN_OP', { dataset: 'HLQ.SOME.DATA' });
+        expect(desc).toContain('UNKNOWN_OP');
+        expect(desc).toContain('HLQ.SOME.DATA');
+    });
+
+    it('should describe unknown intent using name fallback', () => {
+        const desc = describeOperation('UNKNOWN_OP', { name: 'HLQ.SOME.DATA' });
+        expect(desc).toContain('HLQ.SOME.DATA');
+    });
+
+    it('should describe unknown intent with no dataset/name using ?', () => {
+        const desc = describeOperation('UNKNOWN_OP', {});
+        expect(desc).toContain('?');
+    });
+});
+
+// ============================================================
+// Tests — requestConfirmation
+// ============================================================
+
+describe('requestConfirmation', () => {
+    const makeStream = () => ({
+        markdown: jest.fn(),
+        button: jest.fn(),
+        progress: jest.fn(),
+        anchor: jest.fn(),
+    } as unknown as vscode.ChatResponseStream);
+
+    beforeEach(() => {
+        jest.clearAllMocks();
+    });
+
+    it('should return true immediately for safe operations', async () => {
+        const stream = makeStream();
+        const result = await requestConfirmation(stream, 'Read dataset', 'safe', 'HLQ.DEV.SRC');
+        expect(result).toBe(true);
+        expect(stream.markdown).not.toHaveBeenCalled();
+    });
+
+    it('should return true for moderate operations without modal', async () => {
+        const stream = makeStream();
+        const result = await requestConfirmation(stream, 'Write dataset', 'moderate', 'HLQ.DEV.SRC');
+        expect(result).toBe(true);
+        expect(vscode.window.showWarningMessage).not.toHaveBeenCalled();
+        expect(stream.markdown).toHaveBeenCalledWith(expect.stringContaining('Write dataset'));
+    });
+
+    it('should return true when user confirms dangerous operation', async () => {
+        (vscode.window.showWarningMessage as jest.Mock).mockResolvedValue('Confirmer');
+        const stream = makeStream();
+        const result = await requestConfirmation(stream, 'Delete dataset', 'dangerous', 'HLQ.DEV.SRC');
+        expect(result).toBe(true);
+        expect(stream.markdown).toHaveBeenCalledWith(expect.stringContaining('✅'));
+    });
+
+    it('should return false when user cancels dangerous operation', async () => {
+        (vscode.window.showWarningMessage as jest.Mock).mockResolvedValue('Annuler');
+        const stream = makeStream();
+        const result = await requestConfirmation(stream, 'Delete dataset', 'dangerous', 'HLQ.DEV.SRC');
+        expect(result).toBe(false);
+        expect(stream.markdown).toHaveBeenCalledWith(expect.stringContaining('❌'));
+    });
+
+    it('should return false when user dismisses the modal', async () => {
+        (vscode.window.showWarningMessage as jest.Mock).mockResolvedValue(undefined);
+        const stream = makeStream();
+        const result = await requestConfirmation(stream, 'Delete dataset', 'dangerous', 'HLQ.DEV.SRC');
+        expect(result).toBe(false);
+    });
+
+    it('should show PROD prefix and zone warning for protected datasets', async () => {
+        (vscode.window.showWarningMessage as jest.Mock).mockResolvedValue('Confirmer');
+        const stream = makeStream();
+        await requestConfirmation(stream, 'Delete dataset', 'dangerous', 'HLQ.PROD.SRC');
+        expect(vscode.window.showWarningMessage).toHaveBeenCalledWith(
+            expect.stringContaining('[PROD]'),
+            expect.anything(),
+            'Confirmer',
+            'Annuler'
+        );
+        expect(stream.markdown).toHaveBeenCalledWith(expect.stringContaining('ZONE PROTÉGÉE'));
+    });
+
+    it('should use orange emoji for non-protected dangerous datasets', async () => {
+        (vscode.window.showWarningMessage as jest.Mock).mockResolvedValue('Confirmer');
+        const stream = makeStream();
+        await requestConfirmation(stream, 'Delete dataset', 'dangerous', 'HLQ.DEV.SRC');
+        expect(stream.markdown).toHaveBeenCalledWith(expect.stringContaining('🟠'));
+    });
+
+    it('should use red emoji for protected dangerous datasets', async () => {
+        (vscode.window.showWarningMessage as jest.Mock).mockResolvedValue('Confirmer');
+        const stream = makeStream();
+        await requestConfirmation(stream, 'Delete dataset', 'dangerous', 'HLQ.PROD.SRC');
+        expect(stream.markdown).toHaveBeenCalledWith(expect.stringContaining('🔴'));
     });
 });
 

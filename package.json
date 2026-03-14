@@ -2,7 +2,7 @@
     "name": "zos-copilot-assistant",
     "displayName": "z/OS Assistant for Copilot",
     "description": "Interact with z/OS mainframes directly from GitHub Copilot Chat — manage datasets, jobs, JCL submission via Zowe SDK.",
-    "version": "0.6.5",
+    "version": "0.6.6",
     "publisher": "zarafa-dev-io",
     "license": "MIT",
     "icon": "assets/icon.png",

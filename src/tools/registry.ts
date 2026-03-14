@@ -796,7 +796,7 @@ export function registerTools(
                         ddname: s.ddname,
                         stepname: s.stepname,
                         procstep: s.procstep,
-                        byteCount: s.byteCount,
+                        byteCount: s["byte-count"],
                         id: s.id,
                     }));
                 } catch { /* spool not available */ }
