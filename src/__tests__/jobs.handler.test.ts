@@ -928,6 +928,7 @@ describe('JobsHandler', () => {
 
         it('should continue polling after a transient error', async () => {
             jest.useFakeTimers();
+            const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
             mockClassify.mockResolvedValue({ type: 'MONITOR_JOB', jobId: 'JOB12345', jobName: 'PAYROLL' });
             (GetJobs.getJob as jest.Mock)
                 .mockResolvedValueOnce({ ...MOCK_JOB, status: 'ACTIVE', retcode: null }) // resolveJob
@@ -941,6 +942,7 @@ describe('JobsHandler', () => {
             await jest.runAllTimersAsync();
             const result = await promise;
             jest.useRealTimers();
+            warnSpy.mockRestore();
 
             expect(result.metadata.intentType).toBe('MONITOR_JOB');
         });
